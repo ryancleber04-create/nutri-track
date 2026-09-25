@@ -15,7 +15,7 @@ import {
 /* ---------------------------------------------------------
    Helpers
 --------------------------------------------------------- */
-const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+const genId = () => crypto.randomUUID();
 
 const fmtDate = (iso) => {
   if (!iso) return "—";
@@ -185,9 +185,39 @@ async function saveClient(client) {
 
 
 async function deleteClientStorage(id) {
-  const clients = await loadClients();
-  const updated = clients.filter((client) => client.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    throw new Error("Usuário não autenticado.");
+  }
+
+  console.log("ID usuário logado:", user.id);
+  console.log("ID paciente:", id);
+
+  const { data, error } = await supabase
+    .from("pacientes")
+    .delete()
+    .eq("id", id)
+    .eq("nutricionista_id", user.id)
+    .select();
+
+  console.log("Resultado da exclusão:", data);
+
+  if (error) {
+    console.error("Erro ao excluir paciente:", error);
+    throw error;
+  }
+
+  if (!data || data.length === 0) {
+    throw new Error(
+      "Nenhum paciente foi excluído. Verifique o ID e as permissões."
+    );
+  }
+
+  return data;
 }
 
 /* ---------------------------------------------------------
