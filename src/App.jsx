@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import PlanoAlimentar from "./components/PlanoAlimentar";
 import { supabase } from "./supabase";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -159,6 +160,11 @@ async function saveClient(client) {
       client.id
     );
 
+  console.log("Usuário autenticado:", user.id);
+  console.log("Paciente que será enviado:", paciente);  
+  console.log("client.id:", client.id);
+  console.log("uuidValido:", uuidValido);   
+
   let result;
 
   if (uuidValido) {
@@ -166,17 +172,26 @@ async function saveClient(client) {
       .from("pacientes")
       .update(paciente)
       .eq("id", client.id)
-      .eq("nutricionista_id", user.id);
+      .eq("nutricionista_id", user.id)
+      .select();
   } else {
     result = await supabase
       .from("pacientes")
-      .insert(paciente);
-  }
+      .insert([paciente])
+      .select();
 
-  if (result.error) {
-    console.error("Erro ao salvar paciente:", result.error);
-    throw result.error;
+
   }
+  console.log("RESULTADO SUPABASE:", result);
+
+if (result.error) {
+  console.error("ERRO SUPABASE:", result.error);
+  throw result.error;
+}
+
+console.log("PACIENTE SALVO NO BANCO:", result.data);
+
+return result.data;
 }
 
   
@@ -534,13 +549,17 @@ function StatCard({ icon: Icon, label, value, sub, accent }) {
 function ClientDetail({ client, onUpdate, onDeleteClient, onEditClient }) {
   const [showEntryForm, setShowEntryForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null);
+  const [medicoes, setMedicoes] = useState([]);
+  const [loadingMedicoes, setLoadingMedicoes] = useState(false);
   const [confirmDeleteClient, setConfirmDeleteClient] = useState(false);
   const [confirmDeleteEntry, setConfirmDeleteEntry] = useState(null);
   const [showAvaliacaoForm, setShowAvaliacaoForm] = useState(false);
   const [avaliacoes, setAvaliacoes] = useState([]);
   const [loadingAvaliacoes, setLoadingAvaliacoes] = useState(false);
+  const [editingAvaliacao, setEditingAvaliacao] = useState(null);
 
   const [avaliacao, setAvaliacao] = useState({
+  protocolo: "",      
   data_avaliacao: "",
   peso: "",
   estatura: "",
@@ -565,6 +584,57 @@ function ClientDetail({ client, onUpdate, onDeleteClient, onEditClient }) {
   panturrilha_medial: "",
   observacoes: "",
 });
+const carregarMedicoes = async () => {
+  if (!client?.id) return;
+
+  try {
+    setLoadingMedicoes(true);
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      throw new Error("Usuário não autenticado.");
+    }
+
+    const { data, error } = await supabase
+      .from("medicoes")
+      .select("*")
+      .eq("paciente_id", client.id)
+      .eq("nutricionista_id", user.id)
+      .order("data_medicao", { ascending: false });
+
+    if (error) {
+      console.error("Erro ao carregar medições:", error);
+      throw error;
+    }
+
+    const formatadas = (data || []).map((item) => ({
+      id: item.id,
+      date: item.data_medicao,
+      weight: item.peso,
+      waist: item.cintura,
+      hip: item.quadril,
+      chest: item.peitoral,
+      arm: item.braco,
+      thigh: item.coxa,
+      bodyFat: item.percentual_gordura,
+      notes: item.observacoes,
+    }));
+
+    setMedicoes(formatadas);
+  } catch (error) {
+    console.error("Erro ao carregar medições:", error);
+  } finally {
+    setLoadingMedicoes(false);
+  }
+};
+
+useEffect(() => {
+  carregarMedicoes();
+}, [client.id]);
 // Cálculos em tempo real da avaliação
 const pesoAvaliacao = Number(avaliacao.peso);
 const estaturaAvaliacao = Number(avaliacao.estatura);
@@ -607,6 +677,56 @@ const somaPregasAvaliacao = pregasAvaliacao.reduce(
   (total, valor) => total + (Number(valor) || 0),
   0
 );
+const excluirAvaliacao = async (id) => {
+  const confirmar = window.confirm(
+    "Tem certeza que deseja excluir esta avaliação? Esta ação não poderá ser desfeita."
+  );
+
+  if (!confirmar) return;
+
+  try {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      throw new Error("Usuário não autenticado.");
+    }
+
+    const { data, error } = await supabase
+      .from("avaliacoes")
+      .delete()
+      .eq("id", id)
+      .eq("paciente_id", client.id)
+      .select();
+
+    console.log("ID avaliação:", id);
+    console.log("ID paciente:", client.id);
+    console.log("Dados retornados pelo DELETE:", data);
+    console.log("Erro retornado pelo DELETE:", error);
+
+    if (error) {
+      console.error("Erro ao excluir avaliação:", error);
+      throw error;
+    }
+
+    if (!data || data.length === 0) {
+      throw new Error(
+        "Nenhuma avaliação foi excluída. Verifique as permissões."
+      );
+    }
+
+    setAvaliacoes((anteriores) =>
+      anteriores.filter((item) => item.id !== id)
+    );
+
+    console.log("Avaliação excluída com sucesso.");
+  } catch (error) {
+    console.error("Erro ao excluir avaliação:", error);
+    alert("Não foi possível excluir a avaliação.");
+  }
+};
 
 const carregarAvaliacoes = async () => {
   if (!client?.id) return;
@@ -681,8 +801,58 @@ const somaPregas = pregas.reduce(
   0
 );
 
+// Resultado do protocolo de avaliação
+let percentualGordura = null;
+let densidadeCorporal = null;
+let somaPregasProtocolo = somaPregas;
+
+if (avaliacao.protocolo === "jackson_pollock_3") {
+  try {
+    const idade = calcularIdade(client.birthDate);
+
+    if (idade === null) {
+      throw new Error("O paciente precisa ter a data de nascimento cadastrada.");
+    }
+
+    const resultadoProtocolo = calcularJacksonPollock3({
+      sexo: client.sexo,
+      idade: idade,
+      peitoral: avaliacao.peitoral,
+      abdominal: avaliacao.abdominal,
+      coxa: avaliacao.coxa_medial,
+      tricipital: avaliacao.tricipital,
+      supraIliaca: avaliacao.supra_iliaca,
+    });
+
+    percentualGordura = Number(
+      resultadoProtocolo.percentualGordura.toFixed(2)
+    );
+
+    densidadeCorporal = Number(
+      resultadoProtocolo.densidade.toFixed(4)
+    );
+
+    somaPregasProtocolo = Number(
+      resultadoProtocolo.somaPregas.toFixed(2)
+    );
+  } catch (erro) {
+    console.error("Erro no protocolo:", erro);
+    alert(erro.message);
+    return;
+  }
+}
+console.log("===== TESTE JACKSON & POLLOCK =====");
+console.log("Protocolo:", avaliacao.protocolo);
+console.log("Sexo do paciente:", client.sexo);
+console.log("Data nascimento:", client.birthDate);
+console.log("Soma das pregas:", somaPregasProtocolo);
+console.log("Densidade corporal:", densidadeCorporal);
+console.log("Percentual de gordura:", percentualGordura);
+console.log("==================================");
     const dadosAvaliacao = {
       paciente_id: client.id,
+
+      protocolo: avaliacao.protocolo || null,
 
       data_avaliacao:
         avaliacao.data_avaliacao || new Date().toISOString().split("T")[0],
@@ -737,25 +907,58 @@ const somaPregas = pregas.reduce(
 
       observacoes: avaliacao.observacoes || null,
       imc: imc,
-rcq: rcq,
-soma_pregas: somaPregas,
+      rcq: rcq,
+
+      soma_pregas: somaPregasProtocolo,
+      percentual_gordura: percentualGordura,
+      densidade_corporal: densidadeCorporal,
     };
 
-    const { error } = await supabase
-      .from("avaliacoes")
-      .insert(dadosAvaliacao);
+    console.log("DADOS QUE SERÃO SALVOS:", dadosAvaliacao);
 
-    if (error) {
-      console.error("Erro ao salvar avaliação:", error);
-      alert("Não foi possível salvar a avaliação.");
-      return;
-    }
+   let error;
 
-    await carregarAvaliacoes();
-    alert("Avaliação salva com sucesso!");  
+if (editingAvaliacao?.id) {
+  // EDITAR avaliação existente
+  const resultado = await supabase
+    .from("avaliacoes")
+    .update(dadosAvaliacao)
+    .eq("id", editingAvaliacao.id)
+    .eq("paciente_id", client.id);
+
+  error = resultado.error;
+} else {
+  // CRIAR nova avaliação
+  const resultado = await supabase
+    .from("avaliacoes")
+    .insert(dadosAvaliacao);
+
+  error = resultado.error;
+}
+
+if (error) {
+  console.error("Erro ao salvar avaliação:", error);
+  alert(
+    editingAvaliacao
+      ? "Não foi possível atualizar a avaliação."
+      : "Não foi possível salvar a avaliação."
+  );
+  return;
+}
+
+await carregarAvaliacoes();
+
+alert(
+  editingAvaliacao
+    ? "Avaliação atualizada com sucesso!"
+    : "Avaliação salva com sucesso!"
+);
+
+setEditingAvaliacao(null);
     
 
     setAvaliacao({
+      protocolo: "",
       data_avaliacao: "",
       peso: "",
       estatura: "",
@@ -787,113 +990,11 @@ soma_pregas: somaPregas,
     alert("Ocorreu um erro ao salvar a avaliação.");
   }
 };
-{/* Histórico de avaliações */}
-<div
-  className="mt-6 rounded-xl p-5"
-  style={{
-    background: "var(--paper)",
-    border: "1px solid var(--sage)",
-  }}
->
-  <h3
-    className="text-lg font-semibold mb-4"
-    style={{ color: "var(--forest)" }}
-  >
-    Histórico de avaliações
-  </h3>
 
-  {loadingAvaliacoes ? (
-    <p
-      className="text-sm"
-      style={{ color: "var(--sage-dark)" }}
-    >
-      Carregando avaliações...
-    </p>
-  ) : avaliacoes.length === 0 ? (
-    <p
-      className="text-sm"
-      style={{ color: "var(--sage-dark)" }}
-    >
-      Nenhuma avaliação registrada ainda.
-    </p>
-  ) : (
-    <div className="space-y-3">
-      {avaliacoes.map((item) => (
-        <div
-          key={item.id}
-          className="rounded-xl p-4"
-          style={{
-            background: "#fff",
-            border: "1px solid var(--sage)",
-          }}
-        >
-          <div className="flex items-center justify-between gap-4 mb-3">
-            <strong style={{ color: "var(--forest)" }}>
-              Avaliação de {fmtDate(item.data_avaliacao)}
-            </strong>
-          </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <p
-                className="text-xs"
-                style={{ color: "var(--sage-dark)" }}
-              >
-                Peso
-              </p>
-              <p className="font-semibold">
-                {item.peso != null ? `${item.peso} kg` : "—"}
-              </p>
-            </div>
-
-            <div>
-              <p
-                className="text-xs"
-                style={{ color: "var(--sage-dark)" }}
-              >
-                IMC
-              </p>
-              <p className="font-semibold">
-                {item.imc != null
-                  ? Number(item.imc).toFixed(2)
-                  : "—"}
-              </p>
-            </div>
-
-            <div>
-              <p
-                className="text-xs"
-                style={{ color: "var(--sage-dark)" }}
-              >
-                RCQ
-              </p>
-              <p className="font-semibold">
-                {item.rcq != null
-                  ? Number(item.rcq).toFixed(2)
-                  : "—"}
-              </p>
-            </div>
-
-            <div>
-              <p
-                className="text-xs"
-                style={{ color: "var(--sage-dark)" }}
-              >
-                Soma das pregas
-              </p>
-              <p className="font-semibold">
-                {item.soma_pregas != null
-                  ? `${Number(item.soma_pregas).toFixed(1)} mm`
-                  : "—"}
-              </p>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )}
-</div>
-  const entries = sortedEntries(client);
+  const entries = [...medicoes].sort(
+  (a, b) => new Date(b.date) - new Date(a.date)
+);
   const cw = currentWeight(client);
   const bmi = calcBMI(cw, client.height);
   const cat = bmiCategory(bmi);
@@ -1207,23 +1308,152 @@ soma_pregas: somaPregas,
   }));
 
   const addOrEditEntry = async (data) => {
-    let newEntries;
-    if (editingEntry) {
-      newEntries = client.entries.map((e) => (e.id === editingEntry.id ? { ...data, id: e.id } : e));
-    } else {
-      newEntries = [...(client.entries || []), { ...data, id: genId() }];
+  try {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      throw new Error("Usuário não autenticado.");
     }
-    await onUpdate({ ...client, entries: newEntries });
+
+    const medicao = {
+      paciente_id: client.id,
+      nutricionista_id: user.id,
+
+      data_medicao: data.date,
+
+      peso: data.weight ? Number(data.weight) : null,
+      cintura: data.waist ? Number(data.waist) : null,
+      quadril: data.hip ? Number(data.hip) : null,
+      peitoral: data.chest ? Number(data.chest) : null,
+      braco: data.arm ? Number(data.arm) : null,
+      coxa: data.thigh ? Number(data.thigh) : null,
+
+      percentual_gordura: data.bodyFat
+        ? Number(data.bodyFat)
+        : null,
+
+      observacoes: data.notes || null,
+    };
+
+    console.log("Usuário logado:", user.id);
+    console.log("Paciente usado na medição:", client.id);
+    console.log("Medição enviada:", medicao);
+
+    let result;
+
+    if (editingEntry?.id) {
+      result = await supabase
+        .from("medicoes")
+        .update(medicao)
+        .eq("id", editingEntry.id)
+        .eq("nutricionista_id", user.id)
+        .select();
+    } else {
+      result = await supabase
+        .from("medicoes")
+        .insert(medicao)
+        .select();
+    }
+
+    if (result.error) {
+      console.error(
+        "Erro ao salvar medição:",
+        result.error
+      );
+
+      throw result.error;
+    }
+
+    console.log(
+      "Medição salva:",
+      result.data
+    );
+
+    await carregarMedicoes();
+
     setShowEntryForm(false);
     setEditingEntry(null);
-  };
+
+  } catch (error) {
+    console.error(
+      "Erro ao salvar medição:",
+      error
+    );
+
+    alert("Não foi possível salvar a medição.");
+  }
+};
 
   const removeEntry = async (id) => {
-    const newEntries = client.entries.filter((e) => e.id !== id);
-    await onUpdate({ ...client, entries: newEntries });
-    setConfirmDeleteEntry(null);
-  };
+  try {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
 
+    if (authError || !user) {
+      throw new Error("Usuário não autenticado.");
+    }
+
+    const { error } = await supabase
+      .from("medicoes")
+      .delete()
+      .eq("id", id)
+      .eq("paciente_id", client.id)
+      .eq("nutricionista_id", user.id);
+
+    if (error) {
+      console.error("Erro ao excluir medição:", error);
+      throw error;
+    }
+
+    // Remove também da tela
+    setMedicoes((anteriores) =>
+      anteriores.filter((medicao) => medicao.id !== id)
+    );
+
+    setConfirmDeleteEntry(null);
+
+    console.log("Medição excluída com sucesso.");
+  } catch (error) {
+    console.error("Erro ao excluir medição:", error);
+    alert("Não foi possível excluir a medição.");
+  }
+};
+const editarAvaliacao = (item) => {
+  setEditingAvaliacao(item);
+
+  setAvaliacao({
+    data_avaliacao: item.data_avaliacao || "",
+    peso: item.peso ?? "",
+    estatura: item.estatura ?? "",
+    pescoco: item.pescoco ?? "",
+    torax: item.torax ?? "",
+    braco_relaxado: item.braco_relaxado ?? "",
+    braco_contraido: item.braco_contraido ?? "",
+    antebraco: item.antebraco ?? "",
+    cintura: item.cintura ?? "",
+    abdomen: item.abdomen ?? "",
+    quadril: item.quadril ?? "",
+    coxa: item.coxa ?? "",
+    panturrilha: item.panturrilha ?? "",
+    tricipital: item.tricipital ?? "",
+    bicipital: item.bicipital ?? "",
+    subescapular: item.subescapular ?? "",
+    supra_iliaca: item.supra_iliaca ?? "",
+    abdominal: item.abdominal ?? "",
+    peitoral: item.peitoral ?? "",
+    axilar_media: item.axilar_media ?? "",
+    coxa_medial: item.coxa_medial ?? "",
+    panturrilha_medial: item.panturrilha_medial ?? "",
+    observacoes: item.observacoes ?? "",
+  });
+
+  setShowAvaliacaoForm(true);
+};
   return (
     <div id="relatorio-paciente" className="flex-1 overflow-y-auto">
       {/* Header */}
@@ -1320,6 +1550,7 @@ soma_pregas: somaPregas,
                 {client.goalWeight && (
                   <ReferenceLine y={parseFloat(client.goalWeight)} stroke="var(--gold)" strokeDasharray="4 4" label={{ value: "Meta", fontSize: 11, fill: "var(--gold)", position: "insideTopRight" }} />
                 )}
+
                 <Line type="monotone" dataKey="weight" stroke="var(--forest)" strokeWidth={2.5} dot={{ r: 3, fill: "var(--forest)" }} activeDot={{ r: 5 }} />
               </LineChart>
             </ResponsiveContainer>
@@ -1354,7 +1585,37 @@ soma_pregas: somaPregas,
 
     <button
       type="button"
-      onClick={() => setShowAvaliacaoForm(true)}
+      onClick={() => {
+  setEditingAvaliacao(null);
+
+  setAvaliacao({
+    data_avaliacao: "",
+    peso: "",
+    estatura: "",
+    pescoco: "",
+    torax: "",
+    braco_relaxado: "",
+    braco_contraido: "",
+    antebraco: "",
+    cintura: "",
+    abdomen: "",
+    quadril: "",
+    coxa: "",
+    panturrilha: "",
+    tricipital: "",
+    bicipital: "",
+    subescapular: "",
+    supra_iliaca: "",
+    abdominal: "",
+    peitoral: "",
+    axilar_media: "",
+    coxa_medial: "",
+    panturrilha_medial: "",
+    observacoes: "",
+  });
+
+  setShowAvaliacaoForm(true);
+}}
       className="px-4 py-2 rounded-lg text-sm font-semibold"
       style={{
         background: "var(--forest)",
@@ -1399,6 +1660,33 @@ soma_pregas: somaPregas,
     </h4>
 
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+  <label className="block text-sm mb-1">
+    Protocolo de avaliação
+  </label>
+
+  <select
+    value={avaliacao.protocolo || ""}
+    onChange={(e) =>
+      setAvaliacao({
+        ...avaliacao,
+        protocolo: e.target.value,
+      })
+    }
+    className={inputClass}
+    style={inputStyle}
+  >
+    <option value="">Selecione um protocolo</option>
+
+    <option value="jackson_pollock_3">
+      Jackson & Pollock - 3 dobras
+    </option>
+
+    <option value="jackson_pollock_7">
+      Jackson & Pollock - 7 dobras
+    </option>
+  </select>
+</div>
       <div>
         <label className="block text-sm mb-1">Data da avaliação</label>
         <input
@@ -1895,6 +2183,7 @@ soma_pregas: somaPregas,
         Carregando avaliações...
       </p>
     ) : avaliacoes.length === 0 ? (
+      
       <div
         className="rounded-xl p-6 text-center text-sm"
         style={{
@@ -1908,85 +2197,167 @@ soma_pregas: somaPregas,
     ) : (
       <div className="space-y-3">
         {avaliacoes.map((item) => (
-          <div
-            key={item.id}
-            className="rounded-xl p-4"
-            style={{
-              background: "#fff",
-              border: "1px solid var(--sage)",
-            }}
-          >
-            <div className="mb-3">
-              <strong style={{ color: "var(--forest)" }}>
-                Avaliação de {fmtDate(item.data_avaliacao)}
-              </strong>
-            </div>
+  <div
+    key={item.id}
+    className="rounded-xl p-4"
+    style={{
+      background: "#fff",
+      border: "1px solid var(--sage)",
+    }}
+  >
+    
+    {/* Cabeçalho da avaliação */}
+    <div className="flex items-center justify-between gap-4 mb-3">
+      <strong style={{ color: "var(--forest)" }}>
+        Avaliação de {fmtDate(item.data_avaliacao)}
+      </strong>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Botões Editar e Excluir */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => editarAvaliacao(item)}
+          className="p-2 rounded-lg"
+          style={{
+            color: "var(--forest)",
+            background: "transparent",
+          }}
+          title="Editar avaliação"
+        >
+          <Pencil size={16} />
+        </button>
 
-              <div>
-                <p
-                  className="text-xs"
-                  style={{ color: "var(--sage-dark)" }}
-                >
-                  Peso
-                </p>
-                <p className="font-semibold">
-                  {item.peso != null
-                    ? `${item.peso} kg`
-                    : "—"}
-                </p>
-              </div>
+        <button
+          type="button"
+          onClick={() => excluirAvaliacao(item.id)}
+          className="p-2 rounded-lg"
+          style={{
+            color: "var(--berry)",
+            background: "transparent",
+          }}
+          title="Excluir avaliação"
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+    </div>
 
-              <div>
-                <p
-                  className="text-xs"
-                  style={{ color: "var(--sage-dark)" }}
-                >
-                  IMC
-                </p>
-                <p className="font-semibold">
-                  {item.imc != null
-                    ? Number(item.imc).toFixed(2)
-                    : "—"}
-                </p>
-              </div>
+    {/* Informações da avaliação */}
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div>
+        <p
+          className="text-xs"
+          style={{ color: "var(--sage-dark)" }}
+        >
+          Peso
+        </p>
 
-              <div>
-                <p
-                  className="text-xs"
-                  style={{ color: "var(--sage-dark)" }}
-                >
-                  RCQ
-                </p>
-                <p className="font-semibold">
-                  {item.rcq != null
-                    ? Number(item.rcq).toFixed(2)
-                    : "—"}
-                </p>
-              </div>
+        <p className="font-semibold">
+          {item.peso != null ? `${item.peso} kg` : "—"}
+        </p>
+      </div>
 
-              <div>
-                <p
-                  className="text-xs"
-                  style={{ color: "var(--sage-dark)" }}
-                >
-                  Soma das pregas
-                </p>
-                <p className="font-semibold">
-                  {item.soma_pregas != null
-                    ? `${Number(item.soma_pregas).toFixed(1)} mm`
-                    : "—"}
-                </p>
-              </div>
+      <div>
+        <p
+          className="text-xs"
+          style={{ color: "var(--sage-dark)" }}
+        >
+          IMC
+        </p>
 
-            </div>
-          </div>
-        ))}
+        <p className="font-semibold">
+          {item.imc != null
+            ? Number(item.imc).toFixed(2)
+            : "—"}
+        </p>
+      </div>
+
+      <div>
+        <p
+          className="text-xs"
+          style={{ color: "var(--sage-dark)" }}
+        >
+          RCQ
+        </p>
+
+        <p className="font-semibold">
+          {item.rcq != null
+            ? Number(item.rcq).toFixed(2)
+            : "—"}
+        </p>
+      </div>
+
+      <div>
+        <p
+          className="text-xs"
+          style={{ color: "var(--sage-dark)" }}
+        >
+          Soma das pregas
+        </p>
+
+        <p className="font-semibold">
+          {item.soma_pregas != null
+            ? `${Number(item.soma_pregas).toFixed(1)} mm`
+            : "—"}
+        </p>
+      </div>
+    </div>
+          {/* Percentual de gordura */}
+      <div>
+        <p
+          className="text-xs"
+          style={{ color: "var(--sage-dark)" }}
+        >
+          Gordura corporal
+        </p>
+
+        <p className="font-semibold">
+          {item.percentual_gordura != null
+            ? `${Number(item.percentual_gordura).toFixed(2)}%`
+            : "—"}
+        </p>
+      </div>
+
+      {/* Densidade corporal */}
+      <div>
+        <p
+          className="text-xs"
+          style={{ color: "var(--sage-dark)" }}
+        >
+          Densidade corporal
+        </p>
+
+        <p className="font-semibold">
+          {item.densidade_corporal != null
+            ? Number(item.densidade_corporal).toFixed(4)
+            : "—"}
+        </p>
+      </div>
+
+      {/* Protocolo */}
+      <div>
+        <p
+          className="text-xs"
+          style={{ color: "var(--sage-dark)" }}
+        >
+          Protocolo
+        </p>
+
+        <p className="font-semibold">
+          {item.protocolo === "jackson_pollock_3"
+            ? "Jackson & Pollock - 3 dobras"
+            : item.protocolo || "—"}
+        </p>
+      </div>
+  </div>
+))}
       </div>
     )}
   </div>
 </div>
+      {/* PLANO ALIMENTAR */}
+<PlanoAlimentar client={client} />
+
       {/* History */}
       <div className="px-8 pb-10">
         <div className="flex items-center justify-between mb-3">
@@ -2123,7 +2494,76 @@ function EmptyState({ onNewClient, hasClients }) {
     </div>
   );
 }
+function calcularIdade(dataNascimento) {
+  if (!dataNascimento) return null;
 
+  const hoje = new Date();
+  const nascimento = new Date(`${dataNascimento}T00:00:00`);
+
+  let idade = hoje.getFullYear() - nascimento.getFullYear();
+
+  const mes = hoje.getMonth() - nascimento.getMonth();
+
+  if (
+    mes < 0 ||
+    (mes === 0 && hoje.getDate() < nascimento.getDate())
+  ) {
+    idade--;
+  }
+
+  return idade;
+}
+function calcularJacksonPollock3({
+  sexo,
+  idade,
+  peitoral,
+  abdominal,
+  coxa,
+  tricipital,
+  supraIliaca,
+}) {
+  let soma;
+  let densidade;
+
+  const sexoNormalizado = sexo?.toLowerCase();
+
+  if (sexoNormalizado === "masculino") {
+    soma =
+      Number(peitoral) +
+      Number(abdominal) +
+      Number(coxa);
+
+    densidade =
+      1.10938 -
+      0.0008267 * soma +
+      0.0000016 * Math.pow(soma, 2) -
+      0.0002574 * idade;
+  } else if (sexoNormalizado === "feminino") {
+    soma =
+      Number(tricipital) +
+      Number(supraIliaca) +
+      Number(coxa);
+
+    densidade =
+      1.0994921 -
+      0.0009929 * soma +
+      0.0000023 * Math.pow(soma, 2) -
+      0.0001392 * idade;
+  } else {
+    throw new Error(
+      "O paciente precisa ter o sexo cadastrado para usar este protocolo."
+    );
+  }
+
+  const percentualGordura =
+    (495 / densidade) - 450;
+
+  return {
+    somaPregas: soma,
+    densidade,
+    percentualGordura,
+  };
+}
 /* ---------------------------------------------------------
    Main app
 --------------------------------------------------------- */
@@ -2137,6 +2577,9 @@ const [nutricionista, setNutricionista] = useState({
   senha: "",
   confirmarSenha: "",
 });
+
+
+
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -2245,23 +2688,63 @@ const gerarPDF = async () => {
   const selected = clients.find((c) => c.id === selectedId) || null;
 
   const handleCreateOrEditClient = async (formData) => {
-    try {
-      if (editingClient) {
-        const updated = { ...editingClient, ...formData };
-        await saveClient(updated);
-        setClients((cs) => cs.map((c) => (c.id === updated.id ? updated : c)).sort((a, b) => a.name.localeCompare(b.name, "pt-BR")));
-      } else {
-        const newClient = { ...formData, id: genId(), entries: [], createdAt: new Date().toISOString() };
-        await saveClient(newClient);
-        setClients((cs) => [...cs, newClient].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")));
-        setSelectedId(newClient.id);
+  try {
+    if (editingClient) {
+      // EDITAR paciente existente
+      const updated = {
+        ...editingClient,
+        ...formData,
+      };
+
+      await saveClient(updated);
+
+      setClients((cs) =>
+        cs
+          .map((c) => (c.id === updated.id ? updated : c))
+          .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+      );
+
+    } else {
+      // CRIAR novo paciente
+      // Não gera ID aqui. O Supabase vai gerar.
+      const newClient = {
+        ...formData,
+        entries: [],
+      };
+
+      const savedData = await saveClient(newClient);
+
+      console.log("Paciente retornado pelo Supabase:", savedData);
+
+      if (!savedData || savedData.length === 0) {
+        throw new Error("Supabase não retornou o paciente criado.");
       }
-      setShowClientForm(false);
-      setEditingClient(null);
-    } catch (e) {
-      setSaveError("Não foi possível salvar. Tente novamente.");
+
+      const pacienteBanco = savedData[0];
+
+      const savedClient = {
+        ...newClient,
+        id: pacienteBanco.id,
+        createdAt: pacienteBanco.created_at,
+      };
+
+      setClients((cs) =>
+        [...cs, savedClient].sort((a, b) =>
+          a.name.localeCompare(b.name, "pt-BR")
+        )
+      );
+
+      setSelectedId(savedClient.id);
     }
-  };
+
+    setShowClientForm(false);
+    setEditingClient(null);
+
+  } catch (e) {
+    console.error("Erro ao criar/editar paciente:", e);
+    setSaveError("Não foi possível salvar. Tente novamente.");
+  }
+};
 
   const handleUpdateClient = async (updated) => {
     try {
