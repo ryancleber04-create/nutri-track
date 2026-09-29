@@ -91,40 +91,57 @@ const progressPercent = (client) => {
 const STORAGE_KEY = "nutri-track-clients";
 
 async function loadClients() {
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+  try {
+    // Primeiro verifica a sessão atual
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
 
-  if (authError || !user) {
-    return [];
-  }
+    if (sessionError) {
+      console.error("Erro ao verificar sessão:", sessionError);
+      throw sessionError;
+    }
 
-  const { data, error } = await supabase
-    .from("pacientes")
-    .select("*")
-    .eq("nutricionista_id", user.id)
-    .order("nome", { ascending: true });
+    const user = session?.user;
 
-  if (error) {
-    console.error("Erro ao carregar pacientes:", error);
+    console.log("Usuário carregando pacientes:", user?.id);
+
+    if (!user) {
+      console.log("Usuário ainda não autenticado.");
+      return [];
+    }
+
+    // Busca somente os pacientes do nutricionista logado
+    const { data, error } = await supabase
+      .from("pacientes")
+      .select("*")
+      .eq("nutricionista_id", user.id)
+      .order("nome", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao carregar pacientes:", error);
+      throw error;
+    }
+
+    console.log("Pacientes encontrados:", data);
+
+    return (data || []).map((paciente) => ({
+      id: paciente.id,
+      name: paciente.nome || "",
+      birthDate: paciente.data_nascimento || "",
+      sexo: paciente.sexo || "",
+      phone: paciente.telefone || "",
+      email: paciente.email || "",
+      height: paciente.altura ?? "",
+      initialWeight: paciente.peso_inicial ?? "",
+      goalWeight: paciente.peso_meta ?? "",
+      goalNotes: paciente.observacoes || "",
+    }));
+  } catch (error) {
+    console.error("Erro dentro de loadClients:", error);
     throw error;
   }
-
-  return (data || []).map((paciente) => ({
-    id: paciente.id,
-    name: paciente.nome || "",
-    birthDate: paciente.data_nascimento || "",
-    sexo: paciente.sexo || "",
-    phone: paciente.telefone || "",
-    email: paciente.email || "",
-    height: paciente.altura ?? "",
-    initialWeight: paciente.peso_inicial ?? "",
-    goalWeight: paciente.peso_meta ?? "",
-    goalNotes: paciente.observacoes || "",
-    entries: [],
-    createdAt: paciente.created_at,
-  }));
 }
 
 async function saveClient(client) {
