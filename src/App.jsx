@@ -1080,19 +1080,48 @@ console.log("AVALIAÇÃO MAIS RECENTE PARA O PDF:", avaliacaoMaisRecente);
 
     const larguraPagina = pdf.internal.pageSize.getWidth();
 
+    // ==========================================
+// PALETA DE CORES DO NUTRITRACK
+// ==========================================
+
+const cores = {
+  forest: [47, 75, 60],
+  bg: [237, 239, 231],
+  paper: [245, 247, 242],
+  ink: [34, 48, 31],
+  sage: [199, 210, 191],
+  sageDark: [108, 125, 100],
+  sageTint: [233, 238, 226],
+  berry: [156, 61, 84],
+  gold: [184, 137, 47],
+};
+
     // =========================
-    // CABEÇALHO
-    // =========================
+// CABEÇALHO NUTRITRACK
+// =========================
 
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(22);
-    pdf.text("NutriTrack", 15, 20);
+// Fundo verde do cabeçalho
+pdf.setFillColor(...cores.forest);
+pdf.rect(0, 0, larguraPagina, 40, "F");
 
-    pdf.setFontSize(14);
-    pdf.text("Relatório de Avaliação Nutricional", 15, 30);
+// Nome do sistema
+pdf.setTextColor(255, 255, 255);
+pdf.setFont("helvetica", "bold");
+pdf.setFontSize(22);
+pdf.text("NutriTrack", 15, 18);
 
-    pdf.setDrawColor(180);
-    pdf.line(15, 35, larguraPagina - 15, 35);
+// Subtítulo
+pdf.setFont("helvetica", "normal");
+pdf.setFontSize(12);
+pdf.text("Relatório de Avaliação Nutricional", 15, 28);
+
+// Linha dourada
+pdf.setDrawColor(...cores.gold);
+pdf.setLineWidth(1.2);
+pdf.line(15, 34, larguraPagina - 15, 34);
+
+// Volta a cor do texto para o restante do PDF
+pdf.setTextColor(...cores.ink);
 
     // =========================
     // DADOS DO PACIENTE
@@ -1233,20 +1262,22 @@ pdf.text(
   y
 );
 
-   // =========================
-// EVOLUÇÃO DO PESO
+// =========================
+// EVOLUÇÃO DO PESO - GRÁFICO
 // =========================
 
 y += 16;
 
 pdf.setFontSize(13);
 pdf.setFont("helvetica", "bold");
+pdf.setTextColor(...cores.forest);
 pdf.text("Evolução do peso", 15, y);
 
-y += 10;
+y += 7;
 
-pdf.setFontSize(10);
+pdf.setFontSize(9);
 pdf.setFont("helvetica", "normal");
+pdf.setTextColor(...cores.sageDark);
 
 if (entries.length > 0) {
   pdf.text(
@@ -1254,12 +1285,286 @@ if (entries.length > 0) {
     15,
     y
   );
+
+  y += 8;
+
+  // ==========================================
+  // CONFIGURAÇÃO DO GRÁFICO
+  // ==========================================
+
+  const graficoX = 15;
+  const graficoY = y;
+  const graficoLargura = larguraPagina - 30;
+  const graficoAltura = 65;
+
+  const margemEsquerda = 15;
+  const margemDireita = 8;
+  const margemSuperior = 8;
+  const margemInferior = 14;
+
+  // Fundo do gráfico
+  pdf.setFillColor(...cores.sageTint);
+  pdf.roundedRect(
+    graficoX,
+    graficoY,
+    graficoLargura,
+    graficoAltura,
+    3,
+    3,
+    "F"
+  );
+
+  // Área interna
+  const areaX = graficoX + margemEsquerda;
+  const areaY = graficoY + margemSuperior;
+
+  const areaLargura =
+    graficoLargura - margemEsquerda - margemDireita;
+
+  const areaAltura =
+    graficoAltura - margemSuperior - margemInferior;
+
+  // ==========================================
+  // PESOS
+  // ==========================================
+
+  const pesosGrafico = entries.map((item) =>
+    Number(item.weight)
+  );
+
+  // Inclui a meta no cálculo da escala
+  if (goalWeight != null) {
+    pesosGrafico.push(Number(goalWeight));
+  }
+
+  let pesoMin = Math.min(...pesosGrafico);
+  let pesoMax = Math.max(...pesosGrafico);
+
+  // Margem visual
+  pesoMin = Math.floor(pesoMin - 2);
+  pesoMax = Math.ceil(pesoMax + 2);
+
+  if (pesoMax === pesoMin) {
+    pesoMax += 1;
+  }
+
+  // ==========================================
+  // FUNÇÃO PARA CALCULAR POSIÇÃO Y
+  // ==========================================
+
+  const calcularY = (peso) => {
+    return (
+      areaY +
+      areaAltura -
+      ((peso - pesoMin) / (pesoMax - pesoMin)) *
+        areaAltura
+    );
+  };
+
+  // ==========================================
+  // LINHAS HORIZONTAIS + VALORES
+  // ==========================================
+
+  const quantidadeLinhas = 4;
+
+  pdf.setFontSize(7);
+
+  for (let i = 0; i <= quantidadeLinhas; i++) {
+    const valor =
+      pesoMin +
+      ((pesoMax - pesoMin) / quantidadeLinhas) * i;
+
+    const posY =
+      areaY +
+      areaAltura -
+      (areaAltura / quantidadeLinhas) * i;
+
+    pdf.setDrawColor(...cores.sage);
+    pdf.setLineWidth(0.2);
+
+    pdf.line(
+      areaX,
+      posY,
+      areaX + areaLargura,
+      posY
+    );
+
+    pdf.setTextColor(...cores.sageDark);
+
+    pdf.text(
+      `${valor.toFixed(1)} kg`,
+      areaX - 2,
+      posY + 2,
+      { align: "right" }
+    );
+  }
+
+  // ==========================================
+  // LINHA DA META
+  // ==========================================
+
+  if (
+    goalWeight != null &&
+    Number(goalWeight) >= pesoMin &&
+    Number(goalWeight) <= pesoMax
+  ) {
+    const metaY = calcularY(Number(goalWeight));
+
+    pdf.setDrawColor(...cores.gold);
+    pdf.setLineWidth(0.7);
+
+    pdf.line(
+      areaX,
+      metaY,
+      areaX + areaLargura,
+      metaY
+    );
+
+    pdf.setTextColor(...cores.gold);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(7);
+
+    pdf.text(
+      `Meta: ${Number(goalWeight).toFixed(1)} kg`,
+      areaX + areaLargura,
+      metaY - 2,
+      { align: "right" }
+    );
+  }
+
+  // ==========================================
+  // PONTOS DO GRÁFICO
+  // ==========================================
+
+  const pontos = entries.map((item, index) => {
+    let posX;
+
+    if (entries.length === 1) {
+      posX = areaX + areaLargura / 2;
+    } else {
+      posX =
+        areaX +
+        (index / (entries.length - 1)) *
+          areaLargura;
+    }
+
+    return {
+      x: posX,
+      y: calcularY(Number(item.weight)),
+      peso: Number(item.weight),
+      label: item.label || "",
+    };
+  });
+
+  // ==========================================
+  // LINHA DA EVOLUÇÃO
+  // ==========================================
+
+  pdf.setDrawColor(...cores.forest);
+  pdf.setLineWidth(1);
+
+  for (let i = 0; i < pontos.length - 1; i++) {
+    pdf.line(
+      pontos[i].x,
+      pontos[i].y,
+      pontos[i + 1].x,
+      pontos[i + 1].y
+    );
+  }
+
+  // ==========================================
+  // BOLINHAS + PESO + DATA
+  // ==========================================
+
+  pontos.forEach((ponto) => {
+    // Ponto verde
+    pdf.setFillColor(...cores.forest);
+    pdf.circle(
+      ponto.x,
+      ponto.y,
+      1.6,
+      "F"
+    );
+
+    // Peso acima
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(7);
+    pdf.setTextColor(...cores.forest);
+
+    pdf.text(
+      `${ponto.peso.toFixed(1)}`,
+      ponto.x,
+      ponto.y - 3,
+      { align: "center" }
+    );
+
+    // Data abaixo
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(6);
+    pdf.setTextColor(...cores.sageDark);
+
+    pdf.text(
+      ponto.label,
+      ponto.x,
+      areaY + areaAltura + 6,
+      { align: "center" }
+    );
+  });
+
+  // ==========================================
+  // LEGENDA
+  // ==========================================
+
+  pdf.setFillColor(...cores.forest);
+  pdf.circle(
+    graficoX + 5,
+    graficoY + graficoAltura - 4,
+    1.2,
+    "F"
+  );
+
+  pdf.setFontSize(6);
+  pdf.setTextColor(...cores.ink);
+
+  pdf.text(
+    "Peso",
+    graficoX + 8,
+    graficoY + graficoAltura - 2.5
+  );
+
+  if (goalWeight != null) {
+    pdf.setDrawColor(...cores.gold);
+    pdf.setLineWidth(0.7);
+
+    pdf.line(
+      graficoX + 24,
+      graficoY + graficoAltura - 4,
+      graficoX + 31,
+      graficoY + graficoAltura - 4
+    );
+
+    pdf.text(
+      "Meta",
+      graficoX + 34,
+      graficoY + graficoAltura - 2.5
+    );
+  }
+
+  // Coloca o restante do PDF depois do gráfico
+  y += graficoAltura + 8;
+
+  // Retorna a cor padrão
+  pdf.setTextColor(...cores.ink);
+
 } else {
+  pdf.setTextColor(...cores.sageDark);
   pdf.text(
     "Nenhuma medição de peso registrada.",
     15,
     y
   );
+
+  y += 8;
 }
 
 // =========================
