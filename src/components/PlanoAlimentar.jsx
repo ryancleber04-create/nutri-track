@@ -44,6 +44,103 @@ const [alimentoSelecionado, setAlimentoSelecionado] = useState(null);
 
 const [quantidadeAlimento, setQuantidadeAlimento] = useState("");
 
+// ==========================================
+// RESUMO NUTRICIONAL DO PLANO
+// ==========================================
+
+const totaisNutricionais = refeicoes.reduce(
+  (total, refeicao) => {
+    const alimentos = refeicao.alimentos || [];
+
+    alimentos.forEach((alimento) => {
+      total.calorias += Number(alimento.calorias || 0);
+      total.proteinas += Number(alimento.proteinas || 0);
+      total.carboidratos += Number(alimento.carboidratos || 0);
+      total.gorduras += Number(alimento.gorduras || 0);
+    });
+
+    return total;
+  },
+  {
+    calorias: 0,
+    proteinas: 0,
+    carboidratos: 0,
+    gorduras: 0,
+  }
+);
+
+const metasNutricionais = {
+  calorias: Number(planoSalvo?.calorias_meta || plano.calorias_meta || 0),
+  proteinas: Number(planoSalvo?.proteinas_meta || plano.proteinas_meta || 0),
+  carboidratos: Number(
+    planoSalvo?.carboidratos_meta || plano.carboidratos_meta || 0
+  ),
+  gorduras: Number(planoSalvo?.gorduras_meta || plano.gorduras_meta || 0),
+};
+const calcularPercentual = (valor, meta) => {
+  if (!meta || meta <= 0) return 0;
+
+  return Math.min((valor / meta) * 100, 100);
+};
+
+const percentuaisNutricionais = {
+  calorias: calcularPercentual(
+    totaisNutricionais.calorias,
+    metasNutricionais.calorias
+  ),
+  proteinas: calcularPercentual(
+    totaisNutricionais.proteinas,
+    metasNutricionais.proteinas
+  ),
+  carboidratos: calcularPercentual(
+    totaisNutricionais.carboidratos,
+    metasNutricionais.carboidratos
+  ),
+  gorduras: calcularPercentual(
+    totaisNutricionais.gorduras,
+    metasNutricionais.gorduras
+  ),
+};
+// ==========================================
+// RESTANTE DO DIA / EXCESSO DA META
+// ==========================================
+
+const calcularRestante = (consumido, meta) => {
+  const diferenca = Number(meta || 0) - Number(consumido || 0);
+
+  return {
+    restante: diferenca > 0 ? diferenca : 0,
+    excesso: diferenca < 0 ? Math.abs(diferenca) : 0,
+    atingida: diferenca <= 0,
+  };
+};
+
+const saldoNutricional = {
+  calorias: calcularRestante(
+    totaisNutricionais.calorias,
+    metasNutricionais.calorias
+  ),
+
+  proteinas: calcularRestante(
+    totaisNutricionais.proteinas,
+    metasNutricionais.proteinas
+  ),
+
+  carboidratos: calcularRestante(
+    totaisNutricionais.carboidratos,
+    metasNutricionais.carboidratos
+  ),
+
+  gorduras: calcularRestante(
+    totaisNutricionais.gorduras,
+    metasNutricionais.gorduras
+  ),
+};
+
+console.log("TOTAIS NUTRICIONAIS:", totaisNutricionais);
+console.log("METAS NUTRICIONAIS:", metasNutricionais);
+console.log("PERCENTUAIS:", percentuaisNutricionais);
+
   useEffect(() => {
   const carregarPlano = async () => {
     if (!client?.id) return;
@@ -105,14 +202,24 @@ const [quantidadeAlimento, setQuantidadeAlimento] = useState("");
   };
 
   carregarPlano();
+
 }, [client?.id]);
+
   const abrirFormularioAlimento = (refeicao) => {
   setRefeicaoSelecionada(refeicao);
+
+  // Garante que é um NOVO alimento
+  setAlimentoEditando(null);
+
+  // Limpa o formulário
   setBuscaAlimento("");
   setResultadosAlimentos([]);
   setAlimentoSelecionado(null);
   setQuantidadeAlimento("");
+
+  // Abre o formulário
   setMostrarFormularioAlimento(true);
+
 };
 
 const buscarAlimentos = async (texto) => {
@@ -738,7 +845,218 @@ async function excluirAlimento(alimentoId, refeicaoId) {
                 <p className="font-semibold">{planoSalvo.gorduras_meta ?? "—"} g</p>
               </div>
             </div>
+{/* RESUMO NUTRICIONAL */}
+<div
+  className="mt-6 rounded-xl p-5"
+  style={{
+    background: "var(--sage-tint)",
+    border: "1px solid var(--sage)",
+  }}
+>
+  <h3
+    className="font-semibold text-lg mb-4"
+    style={{ color: "var(--forest)" }}
+  >
+    Resumo nutricional
+  </h3>
 
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+    {/* CALORIAS */}
+<div>
+  <div className="flex justify-between mb-1">
+    <span className="font-medium">Calorias</span>
+
+    <span className="text-sm">
+      {totaisNutricionais.calorias.toFixed(1)} /{" "}
+      {metasNutricionais.calorias} kcal
+    </span>
+  </div>
+
+  <div className="w-full bg-white rounded-full h-3 overflow-hidden">
+    <div
+      className="h-3 rounded-full"
+      style={{
+        width: `${Math.min(percentuaisNutricionais.calorias, 100)}%`,
+        background: "var(--forest)",
+      }}
+    />
+  </div>
+
+  <div className="flex justify-between items-center mt-1">
+    {saldoNutricional.calorias.excesso > 0 ? (
+      <p
+        className="text-xs font-semibold"
+        style={{ color: "var(--berry)" }}
+      >
+        Excesso de {saldoNutricional.calorias.excesso.toFixed(1)} kcal
+      </p>
+    ) : (
+      <p
+        className="text-xs"
+        style={{ color: "var(--sage-dark)" }}
+      >
+        Restam {saldoNutricional.calorias.restante.toFixed(1)} kcal
+      </p>
+    )}
+
+    <p
+      className="text-xs"
+      style={{ color: "var(--sage-dark)" }}
+    >
+      {percentuaisNutricionais.calorias.toFixed(1)}%
+    </p>
+  </div>
+</div>
+
+   {/* PROTEÍNAS */}
+<div>
+  <div className="flex justify-between mb-1">
+    <span className="font-medium">Proteínas</span>
+
+    <span className="text-sm">
+      {totaisNutricionais.proteinas.toFixed(1)} /{" "}
+      {metasNutricionais.proteinas} g
+    </span>
+  </div>
+
+  <div className="w-full bg-white rounded-full h-3 overflow-hidden">
+    <div
+      className="h-3 rounded-full"
+      style={{
+        width: `${Math.min(percentuaisNutricionais.proteinas, 100)}%`,
+        background: "var(--forest)",
+      }}
+    />
+  </div>
+
+  <div className="flex justify-between items-center mt-1">
+    {saldoNutricional.proteinas.excesso > 0 ? (
+      <p
+        className="text-xs font-semibold"
+        style={{ color: "var(--berry)" }}
+      >
+        Excesso de {saldoNutricional.proteinas.excesso.toFixed(1)} g
+      </p>
+    ) : (
+      <p
+        className="text-xs"
+        style={{ color: "var(--sage-dark)" }}
+      >
+        Restam {saldoNutricional.proteinas.restante.toFixed(1)} g
+      </p>
+    )}
+
+    <p
+      className="text-xs"
+      style={{ color: "var(--sage-dark)" }}
+    >
+      {percentuaisNutricionais.proteinas.toFixed(1)}%
+    </p>
+  </div>
+</div>
+
+
+{/* CARBOIDRATOS */}
+<div>
+  <div className="flex justify-between mb-1">
+    <span className="font-medium">Carboidratos</span>
+
+    <span className="text-sm">
+      {totaisNutricionais.carboidratos.toFixed(1)} /{" "}
+      {metasNutricionais.carboidratos} g
+    </span>
+  </div>
+
+  <div className="w-full bg-white rounded-full h-3 overflow-hidden">
+    <div
+      className="h-3 rounded-full"
+      style={{
+        width: `${Math.min(
+          percentuaisNutricionais.carboidratos,
+          100
+        )}%`,
+        background: "var(--forest)",
+      }}
+    />
+  </div>
+
+  <div className="flex justify-between items-center mt-1">
+    {saldoNutricional.carboidratos.excesso > 0 ? (
+      <p
+        className="text-xs font-semibold"
+        style={{ color: "var(--berry)" }}
+      >
+        Excesso de {saldoNutricional.carboidratos.excesso.toFixed(1)} g
+      </p>
+    ) : (
+      <p
+        className="text-xs"
+        style={{ color: "var(--sage-dark)" }}
+      >
+        Restam {saldoNutricional.carboidratos.restante.toFixed(1)} g
+      </p>
+    )}
+
+    <p
+      className="text-xs"
+      style={{ color: "var(--sage-dark)" }}
+    >
+      {percentuaisNutricionais.carboidratos.toFixed(1)}%
+    </p>
+  </div>
+</div>
+
+
+{/* GORDURAS */}
+<div>
+  <div className="flex justify-between mb-1">
+    <span className="font-medium">Gorduras</span>
+
+    <span className="text-sm">
+      {totaisNutricionais.gorduras.toFixed(1)} /{" "}
+      {metasNutricionais.gorduras} g
+    </span>
+  </div>
+
+  <div className="w-full bg-white rounded-full h-3 overflow-hidden">
+    <div
+      className="h-3 rounded-full"
+      style={{
+        width: `${Math.min(percentuaisNutricionais.gorduras, 100)}%`,
+        background: "var(--forest)",
+      }}
+    />
+  </div>
+
+  <div className="flex justify-between items-center mt-1">
+    {saldoNutricional.gorduras.excesso > 0 ? (
+      <p
+        className="text-xs font-semibold"
+        style={{ color: "var(--berry)" }}
+      >
+        Excesso de {saldoNutricional.gorduras.excesso.toFixed(1)} g
+      </p>
+    ) : (
+      <p
+        className="text-xs"
+        style={{ color: "var(--sage-dark)" }}
+      >
+        Restam {saldoNutricional.gorduras.restante.toFixed(1)} g
+      </p>
+    )}
+
+    <p
+      className="text-xs"
+      style={{ color: "var(--sage-dark)" }}
+    >
+      {percentuaisNutricionais.gorduras.toFixed(1)}%
+    </p>
+  </div>
+</div>
+
+  </div>
+</div>
             <div className="mt-6">
               <h4 className="font-semibold" style={{ color: "var(--ink)" }}>Refeições</h4>
 
