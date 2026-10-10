@@ -98,3 +98,12 @@ html, body, #root { max-width: 100%; min-width: 0; }
   #root .nt-animated main .text-2xl { font-size: 1.25rem; }
   #root .nt-animated main .text-3xl { font-size: 1.5rem; }
 }
+.nutri-login-background {
+  min-height: 100dvh;
+  background: linear-gradient(
+    135deg,
+    #2F4B3C 0%,
+    #3F654F 55%,
+    #6C7D64 100%
+  );
+}
