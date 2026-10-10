@@ -564,6 +564,62 @@ function StatCard({ icon: Icon, label, value, sub, accent }) {
    Client detail panel
 --------------------------------------------------------- */
 function ClientDetail({ client, onUpdate, onDeleteClient, onEditClient }) {
+  const [enviandoConvite, setEnviandoConvite] = useState(false);
+
+const enviarConvitePaciente = async () => {
+  if (!client.email) {
+    alert("Cadastre um e-mail para o paciente.");
+    return;
+  }
+
+  if (client.auth_user_id) {
+    alert("Este paciente já possui acesso.");
+    return;
+  }
+
+  const confirmar = window.confirm(
+    `Deseja enviar um convite para ${client.email}?`
+  );
+
+  if (!confirmar) return;
+
+  setEnviandoConvite(true);
+
+  try {
+    const { data, error } = await supabase.functions.invoke(
+      "convidar-paciente",
+      {
+        body: {
+          pacienteId: client.id,
+        },
+      }
+    );
+
+    if (error) {
+      let mensagem = error.message;
+
+      try {
+        const detalhes = await error.context?.json();
+        mensagem = detalhes?.erro || mensagem;
+      } catch {
+        // Mantém a mensagem original
+      }
+
+      throw new Error(mensagem);
+    }
+
+    if (!data?.sucesso) {
+      throw new Error(data?.erro || "Erro ao enviar convite.");
+    }
+
+    alert("Convite enviado com sucesso!");
+  } catch (erro) {
+    console.error("Erro ao enviar convite:", erro);
+    alert(erro.message || "Não foi possível enviar o convite.");
+  } finally {
+    setEnviandoConvite(false);
+  }
+};
   const [showEntryForm, setShowEntryForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null);
   const [medicoes, setMedicoes] = useState([]);
@@ -2317,6 +2373,21 @@ const editarAvaliacao = (item) => {
 >
   <ClipboardList size={16} />
 </button>
+{/* Botão para enviar convite ao paciente */}
+<button
+  type="button"
+  onClick={enviarConvitePaciente}
+  disabled={enviandoConvite || Boolean(client.auth_user_id)}
+  className="px-3 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+  style={{ backgroundColor: "#2F4B3C" }}
+  title="Enviar convite para o paciente"
+>
+  {enviandoConvite
+    ? "Enviando..."
+    : client.auth_user_id
+    ? "Acesso criado"
+    : "Enviar convite"}
+</button>
             <button
               onClick={() => setConfirmDeleteClient(true)}
               className="p-2 rounded-lg hover:bg-black/5"
@@ -3451,7 +3522,15 @@ function calcularJacksonPollock3({
 --------------------------------------------------------- */
 export default function NutriTrackApp() {
   const [loggedIn, setLoggedIn] = useState(false);
+  const [tipoUsuario, setTipoUsuario] = useState(null);
+  const [usuarioAtual, setUsuarioAtual] = useState(null);
+  const [verificandoPerfil, setVerificandoPerfil] = useState(true);
+  const [perfilUsuario, setPerfilUsuario] = useState(null);
   const [showCadastro, setShowCadastro] = useState(false);
+  const [primeiroAcesso, setPrimeiroAcesso] = useState(false);
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmarNovaSenha, setConfirmarNovaSenha] = useState("");
+  const [salvandoSenha, setSalvandoSenha] = useState(false);
 
 const [nutricionista, setNutricionista] = useState({
   nome: "",
@@ -3471,33 +3550,187 @@ const [nutricionista, setNutricionista] = useState({
   const [editingClient, setEditingClient] = useState(null);
   const [saveError, setSaveError] = useState(null);
   
+  const identificarUsuario = async (user) => {
+  if (!user) {
+    setTipoUsuario(null);
+    setUsuarioAtual(null);
+    return false;
+  }
+
+  // Verifica se é nutricionista
+  const { data: nutri, error: erroNutri } = await supabase
+    .from("nutricionistas")
+    .select("*")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (erroNutri) throw erroNutri;
+
+  if (nutri) {
+    setTipoUsuario("nutricionista");
+    setUsuarioAtual(nutri);
+    return true;
+  }
+
+  // Verifica se é paciente
+  const { data: paciente, error: erroPaciente } = await supabase
+    .from("pacientes")
+    .select("*")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (erroPaciente) throw erroPaciente;
+
+  if (paciente) {
+    setTipoUsuario("paciente");
+    setUsuarioAtual(paciente);
+    return true;
+  }
+
+  setTipoUsuario(null);
+  setUsuarioAtual(null);
+  return false;
+};
+  const salvarSenhaPaciente = async () => {
+  if (novaSenha.length < 8) {
+    alert("A senha precisa ter pelo menos 8 caracteres.");
+    return;
+  }
+
+  if (novaSenha !== confirmarNovaSenha) {
+    alert("As senhas não são iguais.");
+    return;
+  }
+
+  setSalvandoSenha(true);
+
+  try {
+    const { data: sessao } = await supabase.auth.getUser();
+
+    if (!sessao.user) {
+      throw new Error("Convite inválido ou expirado.");
+    }
+
+    const { data: paciente, error: erroPaciente } = await supabase
+      .from("pacientes")
+      .select("id")
+      .eq("auth_user_id", sessao.user.id)
+      .maybeSingle();
+
+    if (erroPaciente || !paciente) {
+      throw new Error("Não foi encontrado um paciente vinculado a esta conta.");
+    }
+
+    // Salva a nova senha do paciente
+const { error } = await supabase.auth.updateUser({
+  password: novaSenha,
+});
+
+if (error) throw error;
+
+// Registra que o primeiro acesso foi concluído
+const { error: erroConclusao } = await supabase.rpc(
+  "concluir_primeiro_acesso"
+);
+
+if (erroConclusao) {
+  throw new Error(
+    "Senha salva, mas não foi possível concluir o primeiro acesso: " +
+    erroConclusao.message
+  );
+}
+
+    setPrimeiroAcesso(false);
+    setNovaSenha("");
+    setConfirmarNovaSenha("");
+
+    await identificarUsuario(sessao.user);
+    setLoggedIn(true);
+
+    alert("Senha cadastrada com sucesso!");
+  } catch (erro) {
+    alert(erro.message || "Não foi possível cadastrar a senha.");
+  } finally {
+    setSalvandoSenha(false);
+  }
+};
   const handleLogin = async () => {
-  const email = document.querySelector('input[type="email"]').value;
-  const senha = document.querySelector('input[type="password"]').value;
+  const email = document.querySelector('input[type="email"]')?.value;
+  const senha = document.querySelector('input[type="password"]')?.value;
 
   if (!email || !senha) {
     alert("Preencha o e-mail e a senha.");
     return;
   }
 
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password: senha,
   });
-
-  
 
   if (error) {
     alert("E-mail ou senha incorretos.");
     return;
   }
 
-  setLoggedIn(true);
+  setVerificandoPerfil(true);
+
+  try {
+    const encontrado = await identificarUsuario(data.user);
+
+    
+if (!encontrado) {
+  await supabase.auth.signOut();
+  alert("Usuário sem cadastro de nutricionista ou paciente.");
+  return;
+}
+
+// Verifica se o usuário é um paciente
+const { data: paciente, error: erroPaciente } = await supabase
+  .from("pacientes")
+  .select("id, primeiro_acesso_concluido")
+  .eq("auth_user_id", data.user.id)
+  .maybeSingle();
+
+if (erroPaciente) {
+  throw erroPaciente;
+}
+
+// Paciente com primeiro acesso pendente
+if (paciente && !paciente.primeiro_acesso_concluido) {
+  setPrimeiroAcesso(true);
+  setLoggedIn(false);
+  return;
+}
+
+// Nutricionista ou paciente com acesso concluído
+setPrimeiroAcesso(false);
+setLoggedIn(true);
+
+  } catch (erro) {
+    console.error("Erro ao identificar usuário:", erro);
+    await supabase.auth.signOut();
+    setTipoUsuario(null);
+    setUsuarioAtual(null);
+    alert("Não foi possível verificar o perfil do usuário.");
+  } finally {
+    setVerificandoPerfil(false);
+  }
 };
 
 const handleLogout = async () => {
-  await supabase.auth.signOut();
+  const { error } = await supabase.auth.signOut();
+
+  if (error) {
+    alert("Não foi possível sair da conta.");
+    return;
+  }
+
   setLoggedIn(false);
+  setTipoUsuario(null);
+  setUsuarioAtual(null);
+  setClients([]);
+  setSelectedId(null);
 };
 
 
@@ -3516,17 +3749,92 @@ const handleLogout = async () => {
   }, []);
 
   useEffect(() => {
-  const verificarSessao = async () => {
-    const { data } = await supabase.auth.getSession();
+  let ativo = true;
 
-    if (data.session) {
-      setLoggedIn(true);
-    } else {
-      setLoggedIn(false);
+  const verificarSessao = async () => {
+    setVerificandoPerfil(true);
+
+    try {
+      const { data, error } = await supabase.auth.getUser();
+
+      if (error || !data.user) {
+        if (ativo) {
+          setLoggedIn(false);
+          setTipoUsuario(null);
+          setUsuarioAtual(null);
+        }
+        return;
+      }
+
+      if (!ativo) return;
+
+      const encontrado = await identificarUsuario(data.user);
+
+if (!ativo) return;
+
+if (!encontrado) {
+  setLoggedIn(false);
+  return;
+}
+
+const { data: paciente, error: erroPaciente } = await supabase
+  .from("pacientes")
+  .select("id, primeiro_acesso_concluido")
+  .eq("auth_user_id", data.user.id)
+  .maybeSingle();
+
+if (erroPaciente) {
+  throw erroPaciente;
+}
+
+if (paciente && !paciente.primeiro_acesso_concluido) {
+  setPrimeiroAcesso(true);
+  setLoggedIn(false);
+} else {
+  setPrimeiroAcesso(false);
+  setLoggedIn(true);
+}
+    } catch (erro) {
+      console.error("Erro ao verificar sessão:", erro);
+
+      if (ativo) {
+        setLoggedIn(false);
+        setTipoUsuario(null);
+        setUsuarioAtual(null);
+      }
+    } finally {
+      if (ativo) {
+        setVerificandoPerfil(false);
+      }
     }
   };
 
   verificarSessao();
+
+  return () => {
+    ativo = false;
+  };
+}, []);
+useEffect(() => {
+  const verificarConvite = () => {
+    const parametros = new URLSearchParams(window.location.hash.slice(1));
+
+    if (parametros.get("type") === "invite") {
+      setPrimeiroAcesso(true);
+    }
+  };
+
+  verificarConvite();
+
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    (event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setPrimeiroAcesso(true);
+      }
+    }
+  );
+
+  return () => subscription.unsubscribe();
 }, []);
 
   const filtered = useMemo(() => {
@@ -3614,7 +3922,53 @@ const handleLogout = async () => {
       setSaveError("Não foi possível excluir o cliente.");
     }
   };
+if (primeiroAcesso) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#EDEFE7] p-6">
+      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
+        <h1 className="mb-2 text-3xl font-bold text-[#2F4B3C]">
+          NutriTrack
+        </h1>
 
+        <h2 className="mb-3 text-xl font-semibold">
+          Primeiro acesso do paciente
+        </h2>
+
+        <p className="mb-6 text-gray-600">
+          Crie uma senha para acessar seus dados e seu plano alimentar.
+        </p>
+
+        <div className="space-y-4">
+          <input
+            type="password"
+            placeholder="Nova senha"
+            value={novaSenha}
+            onChange={(e) => setNovaSenha(e.target.value)}
+            className="w-full rounded-xl border border-gray-300 p-3"
+          />
+
+          <input
+            type="password"
+            placeholder="Confirmar nova senha"
+            value={confirmarNovaSenha}
+            onChange={(e) => setConfirmarNovaSenha(e.target.value)}
+            className="w-full rounded-xl border border-gray-300 p-3"
+          />
+
+          <button
+            type="button"
+            onClick={salvarSenhaPaciente}
+            disabled={salvandoSenha}
+            className="w-full rounded-xl p-3 font-semibold text-white disabled:opacity-50"
+            style={{ backgroundColor: "#2F4B3C" }}
+          >
+            {salvandoSenha ? "Salvando..." : "Criar minha senha"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
   if (!loggedIn) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] p-6">
@@ -3820,7 +4174,27 @@ const handleLogout = async () => {
   );
 }
 
+if (tipoUsuario === "paciente") {
+  return (
+    <div className="min-h-screen bg-[var(--bg)] p-6">
+      <h1 className="text-2xl font-bold text-[var(--forest)]">
+        Meu painel - NutriTrack
+      </h1>
 
+      <p className="mt-3">
+        Bem-vindo ao seu acompanhamento nutricional!
+      </p>
+
+      <button
+        type="button"
+        onClick={handleLogout}
+        className="mt-6 rounded-lg bg-red-600 px-4 py-2 text-white"
+      >
+        Sair
+      </button>
+    </div>
+  );
+}
 
   return (
     <div
