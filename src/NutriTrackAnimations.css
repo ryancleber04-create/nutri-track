@@ -1,0 +1,100 @@
+/* Animações do NutriTrack */
+
+@keyframes nutriFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes nutriPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Entrada suave das telas */
+#root main {
+  animation: nutriFadeIn 0.6s ease-out both;
+}
+
+/* Animação dos cartões */
+#root main .rounded-xl,
+#root main .rounded-2xl {
+  animation: nutriFadeIn 0.5s ease-out both;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+/* Efeito ao passar o mouse */
+@media (hover: hover) {
+  #root main .rounded-xl:hover,
+  #root main .rounded-2xl:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 25px rgba(47, 75, 60, 0.12);
+  }
+
+  #root button:not(:disabled):hover {
+    filter: brightness(1.05);
+  }
+}
+
+/* Botões */
+#root button {
+  transition:
+    transform 0.2s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+#root button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Acessibilidade */
+@media (prefers-reduced-motion: reduce) {
+  #root *,
+  #root *::before,
+  #root *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Responsividade para todas as resoluções */
+html, body, #root { max-width: 100%; min-width: 0; }
+#root { overflow-x: clip; }
+#root img, #root svg { max-width: 100%; }
+#root input, #root select, #root textarea { max-width: 100%; min-width: 0; }
+#root .grid > * { min-width: 0; }
+#root .nt-animated { width: 100%; max-width: 100%; }
+#root .nt-nutritionist > :not(.nt-sidebar) { min-width: 0; flex: 1 1 auto; overflow-x: auto; }
+#root .nt-nutritionist table { min-width: 560px; }
+#root .nt-nutritionist .recharts-responsive-container { min-width: 0; }
+
+@media (max-width: 767px) {
+  #root .nt-nutritionist { min-height: 100dvh !important; height: auto !important; overflow: visible !important; }
+  #root .nt-sidebar { max-height: 320px; border-right: 0 !important; border-bottom: 1px solid var(--sage); }
+  #root .nt-sidebar > .flex-1 { min-height: 0; overflow-y: auto; }
+  #root .nt-nutritionist > :not(.nt-sidebar) { width: 100%; overflow-x: auto; }
+  #root .nt-animated header { padding-inline: 1rem; }
+  #root .nt-animated main { min-width: 0; }
+  #root .nt-animated main h2 { overflow-wrap: anywhere; }
+  #root .nt-animated main .recharts-wrapper { max-width: 100%; }
+  #root .fixed.inset-0 { padding: 0.75rem; }
+  #root .fixed.inset-0 > div { max-height: 92dvh; }
+}
+
+@media (max-width: 380px) {
+  #root .nt-animated main { padding-inline: 0.75rem; }
+  #root .nt-animated main .text-2xl { font-size: 1.25rem; }
+  #root .nt-animated main .text-3xl { font-size: 1.5rem; }
+}

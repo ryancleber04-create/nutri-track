@@ -1,3 +1,4 @@
+import "./NutriTrackAnimations.css";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import PlanoAlimentar from "./components/PlanoAlimentar";
 import { supabase } from "./supabase";
@@ -391,8 +392,11 @@ function ClientForm({ initial, onCancel, onSave }) {
     e.preventDefault();
     if (!form.name.trim()) return;
     setSaving(true);
-    await onSave(form);
-    setSaving(false);
+    try {
+      await onSave(form);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -400,7 +404,7 @@ function ClientForm({ initial, onCancel, onSave }) {
       <Field label="Nome completo" required>
         <input className={inputClass} style={inputStyle} value={form.name} onChange={set("name")} placeholder="Ex: Marina Alves" required />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Data de nascimento">
           <input type="date" className={inputClass} style={inputStyle} value={form.birthDate} onChange={set("birthDate")} />
           <div>
@@ -423,7 +427,7 @@ function ClientForm({ initial, onCancel, onSave }) {
           <input type="number" step="0.1" className={inputClass} style={inputStyle} value={form.height} onChange={set("height")} placeholder="165" />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Telefone">
           <input className={inputClass} style={inputStyle} value={form.phone} onChange={set("phone")} placeholder="(79) 99999-9999" />
         </Field>
@@ -431,7 +435,7 @@ function ClientForm({ initial, onCancel, onSave }) {
           <input type="email" className={inputClass} style={inputStyle} value={form.email} onChange={set("email")} placeholder="cliente@email.com" />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Peso inicial (kg)" required>
           <input type="number" step="0.1" className={inputClass} style={inputStyle} value={form.initialWeight} onChange={set("initialWeight")} placeholder="72.5" required />
         </Field>
@@ -485,13 +489,16 @@ function EntryForm({ initial, onCancel, onSave }) {
     e.preventDefault();
     if (!form.date || !form.weight) return;
     setSaving(true);
-    await onSave(form);
-    setSaving(false);
+    try {
+      await onSave(form);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <form onSubmit={submit}>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Data" required>
           <input type="date" className={inputClass} style={inputStyle} value={form.date} onChange={set("date")} required />
         </Field>
@@ -499,7 +506,7 @@ function EntryForm({ initial, onCancel, onSave }) {
           <input type="number" step="0.1" className={inputClass} style={inputStyle} value={form.weight} onChange={set("weight")} placeholder="70.2" required />
         </Field>
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="Cintura (cm)">
           <input type="number" step="0.1" className={inputClass} style={inputStyle} value={form.waist} onChange={set("waist")} />
         </Field>
@@ -510,7 +517,7 @@ function EntryForm({ initial, onCancel, onSave }) {
           <input type="number" step="0.1" className={inputClass} style={inputStyle} value={form.chest} onChange={set("chest")} />
         </Field>
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="Braço (cm)">
           <input type="number" step="0.1" className={inputClass} style={inputStyle} value={form.arm} onChange={set("arm")} />
         </Field>
@@ -2337,7 +2344,7 @@ const editarAvaliacao = (item) => {
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Header */}
-      <div className="px-8 pt-8 pb-6" style={{ borderBottom: "1px solid var(--sage)" }}>
+      <div className="px-4 sm:px-8 pt-6 sm:pt-8 pb-6" style={{ borderBottom: "1px solid var(--sage)" }}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-4">
             <RingAvatar name={client.name} percent={pct} size={56} />
@@ -2408,7 +2415,7 @@ const editarAvaliacao = (item) => {
       </div>
 
       {/* Stats */}
-<div className="px-8 py-6 grid grid-cols-2 md:grid-cols-4 gap-3">
+<div className="px-4 sm:px-8 py-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
 
   <StatCard
     icon={Scale}
@@ -2472,7 +2479,7 @@ const editarAvaliacao = (item) => {
 </div>
 
       {/* Chart */}
-      <div className="px-8 pb-6">
+      <div className="px-4 sm:px-8 pb-6">
         <div className="rounded-xl p-5" style={{ background: "#fff", border: "1px solid var(--sage)" }}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: "var(--ink)", fontFamily: "var(--font-body)" }}>
@@ -3107,7 +3114,7 @@ const editarAvaliacao = (item) => {
 )}
 
 {/* Histórico de avaliações antropométricas */}
-<div className="px-8 pb-6">
+<div className="px-4 sm:px-8 pb-6">
   <div
     className="rounded-xl p-5"
     style={{
@@ -3312,7 +3319,7 @@ const editarAvaliacao = (item) => {
 <PlanoAlimentar client={client} />
 
       {/* History */}
-      <div className="px-8 pb-10">
+      <div className="px-4 sm:px-8 pb-10">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: "var(--ink)", fontFamily: "var(--font-body)" }}>
             <ClipboardList size={15} style={{ color: "var(--forest)" }} />
@@ -3524,6 +3531,8 @@ export default function NutriTrackApp() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [tipoUsuario, setTipoUsuario] = useState(null);
   const [usuarioAtual, setUsuarioAtual] = useState(null);
+  const [dadosPaciente, setDadosPaciente] = useState(null);
+  const [carregandoPaciente, setCarregandoPaciente] = useState(false);
   const [verificandoPerfil, setVerificandoPerfil] = useState(true);
   const [perfilUsuario, setPerfilUsuario] = useState(null);
   const [showCadastro, setShowCadastro] = useState(false);
@@ -3531,6 +3540,13 @@ export default function NutriTrackApp() {
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmarNovaSenha, setConfirmarNovaSenha] = useState("");
   const [salvandoSenha, setSalvandoSenha] = useState(false);
+  const [medicoesPaciente, setMedicoesPaciente] = useState([]);
+  const [carregandoMedicoes, setCarregandoMedicoes] = useState(false);
+  const [planoPaciente, setPlanoPaciente] = useState(null);
+  const [refeicoesPaciente, setRefeicoesPaciente] = useState([]);
+  const [avaliacoesPaciente, setAvaliacoesPaciente] = useState([]);
+  const [carregandoResumo, setCarregandoResumo] = useState(false);
+  const [erroResumo, setErroResumo] = useState("");
 
 const [nutricionista, setNutricionista] = useState({
   nome: "",
@@ -3542,7 +3558,7 @@ const [nutricionista, setNutricionista] = useState({
 
 
   const [clients, setClients] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [search, setSearch] = useState("");
@@ -3554,6 +3570,7 @@ const [nutricionista, setNutricionista] = useState({
   if (!user) {
     setTipoUsuario(null);
     setUsuarioAtual(null);
+    setDadosPaciente(null);
     return false;
   }
 
@@ -3568,7 +3585,8 @@ const [nutricionista, setNutricionista] = useState({
 
   if (nutri) {
     setTipoUsuario("nutricionista");
-    setUsuarioAtual(nutri);
+    setUsuarioAtual(user);
+    setDadosPaciente(null);
     return true;
   }
 
@@ -3583,12 +3601,14 @@ const [nutricionista, setNutricionista] = useState({
 
   if (paciente) {
     setTipoUsuario("paciente");
-    setUsuarioAtual(paciente);
+    setUsuarioAtual(user);
+    setDadosPaciente(paciente);
     return true;
   }
 
   setTipoUsuario(null);
   setUsuarioAtual(null);
+  setDadosPaciente(null);
   return false;
 };
   const salvarSenhaPaciente = async () => {
@@ -3729,24 +3749,75 @@ const handleLogout = async () => {
   setLoggedIn(false);
   setTipoUsuario(null);
   setUsuarioAtual(null);
+  setDadosPaciente(null);
+  setMedicoesPaciente([]);
+  setPrimeiroAcesso(false);
   setClients([]);
   setSelectedId(null);
 };
 
 
   useEffect(() => {
+    if (!loggedIn || tipoUsuario !== "nutricionista") {
+      setClients([]);
+      setLoading(false);
+      setLoadError(false);
+      return;
+    }
+
+    let ativo = true;
+    setLoading(true);
+    setLoadError(false);
+
     (async () => {
       try {
         const data = await loadClients();
-        data.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-        setClients(data);
-      } catch (e) {
-        setLoadError(true);
+        if (ativo) {
+          setClients(data.sort((a, b) => a.name.localeCompare(b.name, "pt-BR")));
+        }
+      } catch (erro) {
+        console.error("Erro ao carregar clientes:", erro);
+        if (ativo) setLoadError(true);
       } finally {
-        setLoading(false);
+        if (ativo) setLoading(false);
       }
     })();
-  }, []);
+
+    return () => { ativo = false; };
+  }, [loggedIn, tipoUsuario]);
+
+  // Atualiza o cadastro exibido na área do paciente autenticado.
+  useEffect(() => {
+    if (!loggedIn || tipoUsuario !== "paciente" || !usuarioAtual?.id) {
+      setCarregandoPaciente(false);
+      return;
+    }
+
+    let ativo = true;
+    setCarregandoPaciente(true);
+
+    const carregarDadosPaciente = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("pacientes")
+          .select("id, nome, peso_inicial, peso_meta, altura, auth_user_id")
+          .eq("auth_user_id", usuarioAtual.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (ativo) setDadosPaciente(data);
+        if (!data) console.warn("Não existe paciente vinculado à conta autenticada.");
+      } catch (erro) {
+        console.error("Erro ao carregar dados do paciente:", erro);
+        if (ativo) setDadosPaciente(null);
+      } finally {
+        if (ativo) setCarregandoPaciente(false);
+      }
+    };
+
+    carregarDadosPaciente();
+    return () => { ativo = false; };
+  }, [loggedIn, tipoUsuario, usuarioAtual?.id]);
 
   useEffect(() => {
   let ativo = true;
@@ -3815,6 +3886,86 @@ if (paciente && !paciente.primeiro_acesso_concluido) {
     ativo = false;
   };
 }, []);
+useEffect(() => {
+  if (tipoUsuario !== "paciente" || !dadosPaciente?.id) {
+    setMedicoesPaciente([]);
+    return;
+  }
+
+  let ativo = true;
+
+  const carregarMedicoes = async () => {
+    setCarregandoMedicoes(true);
+
+    const { data, error } = await supabase
+      .from("medicoes")
+      .select("id, data_medicao, peso")
+      .eq("paciente_id", dadosPaciente.id)
+      .order("data_medicao", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao carregar medições:", error);
+    }
+
+    if (ativo) {
+      setMedicoesPaciente(error ? [] : data || []);
+      setCarregandoMedicoes(false);
+    }
+  };
+
+  carregarMedicoes();
+
+  return () => {
+    ativo = false;
+  };
+}, [tipoUsuario, dadosPaciente?.id]);
+
+useEffect(() => {
+  if (tipoUsuario !== "paciente" || !dadosPaciente?.id) {
+    setPlanoPaciente(null);
+    setRefeicoesPaciente([]);
+    setAvaliacoesPaciente([]);
+    setErroResumo("");
+    return;
+  }
+  let ativo = true;
+  const carregarResumo = async () => {
+    setCarregandoResumo(true);
+    setErroResumo("");
+    try {
+      const [resPlano, resAvaliacoes] = await Promise.all([
+        supabase.from("planos_alimentares").select("*")
+          .eq("paciente_id", dadosPaciente.id)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("avaliacoes").select("*")
+          .eq("paciente_id", dadosPaciente.id)
+          .order("data_avaliacao", { ascending: false }),
+      ]);
+      if (resPlano.error) throw resPlano.error;
+      if (resAvaliacoes.error) throw resAvaliacoes.error;
+      let refeicoes = [];
+      if (resPlano.data?.id) {
+        const resposta = await supabase.from("refeicoes").select("*")
+          .eq("plano_id", resPlano.data.id).order("horario", { ascending: true });
+        if (resposta.error) throw resposta.error;
+        refeicoes = resposta.data || [];
+      }
+      if (ativo) {
+        setPlanoPaciente(resPlano.data || null);
+        setRefeicoesPaciente(refeicoes);
+        setAvaliacoesPaciente(resAvaliacoes.data || []);
+      }
+    } catch (erro) {
+      console.error("Erro ao carregar acompanhamento do paciente:", erro);
+      if (ativo) setErroResumo("Não foi possível consultar o plano ou as avaliações. Verifique as permissões de acesso no Supabase.");
+    } finally {
+      if (ativo) setCarregandoResumo(false);
+    }
+  };
+  carregarResumo();
+  return () => { ativo = false; };
+}, [tipoUsuario, dadosPaciente?.id]);
+
 useEffect(() => {
   const verificarConvite = () => {
     const parametros = new URLSearchParams(window.location.hash.slice(1));
@@ -3922,10 +4073,28 @@ useEffect(() => {
       setSaveError("Não foi possível excluir o cliente.");
     }
   };
-if (primeiroAcesso) {
+
+const ultimaMedicao =
+  medicoesPaciente.length > 0
+    ? medicoesPaciente[medicoesPaciente.length - 1]
+    : null;
+
+const pesoAtual = ultimaMedicao?.peso;
+  
+if (verificandoPerfil && !primeiroAcesso) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#EDEFE7] p-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
+    <div className="nt-animated min-h-screen flex items-center justify-center bg-[#EDEFE7] text-[#2F4B3C]">
+      <p className="nt-loading font-semibold">Verificando acesso ao NutriTrack...</p>
+    </div>
+  );
+}
+
+if (primeiroAcesso) {
+
+
+  return (
+    <div className="nt-animated min-h-screen flex items-center justify-center bg-[#EDEFE7] p-6">
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 sm:p-8 shadow-lg">
         <h1 className="mb-2 text-3xl font-bold text-[#2F4B3C]">
           NutriTrack
         </h1>
@@ -3971,8 +4140,8 @@ if (primeiroAcesso) {
 }
   if (!loggedIn) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] p-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
+    <div className="nt-animated min-h-screen flex items-center justify-center bg-[var(--bg)] p-6">
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 sm:p-8 shadow-lg">
         <h1 className="mb-2 text-3xl font-bold text-[var(--forest)]">
           NutriTrack
         </h1>
@@ -4174,31 +4343,97 @@ if (primeiroAcesso) {
   );
 }
 
+
 if (tipoUsuario === "paciente") {
+  const pesos = medicoesPaciente.filter(m => m.peso != null && m.data_medicao)
+    .map(m => ({ data: m.data_medicao, peso: Number(m.peso), label: fmtDateShort(m.data_medicao) }));
+  const pesoReferencia = pesoAtual != null ? Number(pesoAtual) : null;
+  const meta = dadosPaciente?.peso_meta != null ? Number(dadosPaciente.peso_meta) : null;
+  const inicial = dadosPaciente?.peso_inicial != null ? Number(dadosPaciente.peso_inicial) : null;
+  const variacao = pesoReferencia != null && inicial != null ? pesoReferencia - inicial : null;
+  const resumoCards = [
+    { titulo: "Peso atual", valor: carregandoMedicoes ? "Carregando..." : pesoReferencia != null ? `${pesoReferencia.toFixed(1)} kg` : "Sem medições", icone: Scale, detalhe: "Última medição registrada" },
+    { titulo: "Peso inicial", valor: inicial != null ? `${inicial.toFixed(1)} kg` : "—", icone: Ruler, detalhe: "Início do acompanhamento" },
+    { titulo: "Meta de peso", valor: meta != null ? `${meta.toFixed(1)} kg` : "—", icone: Target, detalhe: "Objetivo cadastrado" },
+    { titulo: "Variação", valor: variacao != null ? `${variacao > 0 ? "+" : ""}${variacao.toFixed(1)} kg` : "—", icone: TrendingUp, detalhe: "Em relação ao peso inicial" },
+  ];
   return (
-    <div className="min-h-screen bg-[var(--bg)] p-6">
-      <h1 className="text-2xl font-bold text-[var(--forest)]">
-        Meu painel - NutriTrack
-      </h1>
-
-      <p className="mt-3">
-        Bem-vindo ao seu acompanhamento nutricional!
-      </p>
-
-      <button
-        type="button"
-        onClick={handleLogout}
-        className="mt-6 rounded-lg bg-red-600 px-4 py-2 text-white"
-      >
-        Sair
-      </button>
+    <div className="nt-animated min-h-screen bg-[#EDEFE7] text-[#22301F]" style={{ fontFamily: "Inter, sans-serif" }}>
+      <header className="bg-[#2F4B3C] text-white px-5 py-5 shadow-md">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3"><div className="rounded-xl bg-white/15 p-2"><Leaf size={23}/></div>
+            <div><h1 className="text-2xl font-bold">NutriTrack</h1><p className="text-sm text-white/75">Meu acompanhamento nutricional</p></div></div>
+          <button type="button" onClick={handleLogout} className="rounded-xl border border-white/30 px-4 py-2 text-sm font-semibold hover:bg-white/15">Sair</button>
+        </div>
+      </header>
+      <main className="max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-9">
+        <section className="mb-8">
+          <p className="text-xs font-bold uppercase tracking-[.16em] text-[#6C7D64] mb-2">Seu espaço de saúde</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-[#2F4B3C]">{carregandoPaciente ? "Carregando..." : `Olá, ${dadosPaciente?.nome || "paciente"}!`}</h2>
+          <p className="mt-3 text-[#6C7D64]">Acompanhe seu progresso, refeições e avaliações em um só lugar.</p>
+        </section>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
+          {resumoCards.map(({ titulo, valor, icone: Icon, detalhe }) => (
+            <div key={titulo} className="nt-hover-card min-w-0 rounded-2xl bg-white p-4 sm:p-5 border border-[#C7D2BF] shadow-sm">
+              <div className="flex items-center justify-between mb-4"><span className="text-sm text-[#6C7D64]">{titulo}</span><span className="rounded-xl bg-[#E9EEE2] p-2 text-[#2F4B3C]"><Icon size={19}/></span></div>
+              <p className="text-2xl font-bold text-[#2F4B3C]">{valor}</p><p className="text-xs text-[#6C7D64] mt-2">{detalhe}</p>
+            </div>
+          ))}
+        </div>
+        {erroResumo && <div role="alert" className="mb-6 rounded-xl border border-[#9C3D54]/30 bg-white px-5 py-4 text-[#9C3D54] text-sm">{erroResumo}</div>}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6 mb-6">
+          <section className="lg:col-span-3 min-w-0 rounded-2xl bg-white p-4 sm:p-6 border border-[#C7D2BF] shadow-sm">
+            <div className="flex items-center gap-2 mb-2 text-[#2F4B3C]"><TrendingUp size={20}/><h3 className="text-xl font-bold">Minha evolução</h3></div>
+            <p className="text-sm text-[#6C7D64] mb-5">Histórico de peso registrado pelo nutricionista</p>
+            {carregandoMedicoes ? <p className="nt-loading text-sm text-[#6C7D64]">Carregando medições...</p> : pesos.length ? (
+              <div className="w-full h-64" role="img" aria-label="Gráfico de evolução do peso">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={pesos} margin={{ top: 15, right: 15, left: -15, bottom: 5 }}>
+                    <CartesianGrid stroke="#E9EEE2" strokeDasharray="4 4"/>
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6C7D64" }}/>
+                    <YAxis domain={["auto", "auto"]} tick={{ fontSize: 11, fill: "#6C7D64" }}/>
+                    <Tooltip formatter={(valor) => [`${Number(valor).toFixed(1)} kg`, "Peso"]}/>
+                    {meta != null && <ReferenceLine y={meta} stroke="#B8892F" strokeDasharray="5 5" label={{ value: "Meta", fill: "#B8892F", fontSize: 11 }}/>} 
+                    <Line type="monotone" dataKey="peso" stroke="#2F4B3C" strokeWidth={3} dot={{ r: 4, fill: "#2F4B3C" }} activeDot={{ r: 6 }}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : <div className="rounded-xl bg-[#F5F7F2] px-5 py-10 text-center text-sm text-[#6C7D64]">Nenhuma medição registrada ainda. O gráfico aparecerá após a primeira medição.</div>}
+          </section>
+          <section className="lg:col-span-2 min-w-0 rounded-2xl bg-white p-4 sm:p-6 border border-[#C7D2BF] shadow-sm">
+            <div className="flex items-center gap-2 mb-2 text-[#2F4B3C]"><ClipboardList size={20}/><h3 className="text-xl font-bold">Meu plano alimentar</h3></div>
+            <p className="text-sm text-[#6C7D64] mb-5">Refeições organizadas para você</p>
+            {carregandoResumo ? <p className="nt-loading text-sm text-[#6C7D64]">Carregando plano...</p> : !planoPaciente ? <p className="rounded-xl bg-[#F5F7F2] p-5 text-sm text-[#6C7D64]">Seu nutricionista ainda não cadastrou um plano alimentar.</p> : refeicoesPaciente.length === 0 ? <p className="rounded-xl bg-[#F5F7F2] p-5 text-sm text-[#6C7D64]">Plano cadastrado, mas ainda sem refeições.</p> : (
+              <div className="space-y-3 max-h-64 overflow-y-auto pr-1">{refeicoesPaciente.map(refeicao => (
+                <div key={refeicao.id} className="rounded-xl bg-[#F5F7F2] border border-[#E9EEE2] p-4">
+                  <div className="flex items-center justify-between gap-3"><strong className="text-[#2F4B3C] text-sm">{refeicao.nome || "Refeição"}</strong><span className="text-xs text-[#6C7D64] whitespace-nowrap">{refeicao.horario?.slice(0, 5) || ""}</span></div>
+                  {refeicao.observacoes && <p className="text-xs text-[#6C7D64] mt-2">{refeicao.observacoes}</p>}
+                </div>
+              ))}</div>
+            )}
+          </section>
+        </div>
+        <section className="rounded-2xl bg-white p-6 border border-[#C7D2BF] shadow-sm mb-6">
+          <div className="flex items-center gap-2 mb-2 text-[#2F4B3C]"><ClipboardList size={20}/><h3 className="text-xl font-bold">Minhas avaliações</h3></div>
+          <p className="text-sm text-[#6C7D64] mb-5">Resultados das avaliações antropométricas registradas</p>
+          {carregandoResumo ? <p className="nt-loading text-sm text-[#6C7D64]">Carregando avaliações...</p> : avaliacoesPaciente.length === 0 ? <p className="rounded-xl bg-[#F5F7F2] p-5 text-sm text-[#6C7D64]">Nenhuma avaliação cadastrada até o momento.</p> : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">{avaliacoesPaciente.map(avaliacao => (
+              <article key={avaliacao.id} className="rounded-xl border border-[#E9EEE2] bg-[#F5F7F2] p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-[#2F4B3C] mb-3"><Calendar size={16}/>{fmtDate(avaliacao.data_avaliacao)}</div>
+                <div className="grid grid-cols-2 gap-2 text-sm"><span>Peso</span><strong>{avaliacao.peso != null ? `${avaliacao.peso} kg` : "—"}</strong><span>IMC</span><strong>{avaliacao.imc != null ? Number(avaliacao.imc).toFixed(2) : "—"}</strong><span>Gordura</span><strong>{avaliacao.percentual_gordura != null ? `${avaliacao.percentual_gordura}%` : "—"}</strong></div>
+              </article>
+            ))}</div>
+          )}
+        </section>
+        <p className="text-xs text-center text-[#6C7D64] pb-5">NutriTrack • Seu acompanhamento em cada etapa</p>
+      </main>
     </div>
   );
 }
 
   return (
     <div
-      className="flex h-full w-full overflow-hidden rounded-xl"
+      className="nt-animated nt-nutritionist flex flex-col md:flex-row h-full w-full overflow-hidden rounded-xl"
       style={{ background: "var(--bg)", minHeight: 640, fontFamily: "var(--font-body)" }}
     >
       <style>{`
@@ -4225,7 +4460,7 @@ if (tipoUsuario === "paciente") {
       `}</style>
 
       {/* Sidebar */}
-      <div className="w-[300px] shrink-0 flex flex-col" style={{ background: "var(--paper)", borderRight: "1px solid var(--sage)" }}>
+      <div className="nt-sidebar w-full md:w-[300px] shrink-0 flex flex-col" style={{ background: "var(--paper)", borderRight: "1px solid var(--sage)" }}>
         <div className="px-5 pt-6 pb-4" style={{ borderBottom: "1px solid var(--sage)" }}>
           <div className="flex items-center gap-2 mb-4">
             <Leaf size={20} style={{ color: "var(--forest)" }} />
