@@ -4140,7 +4140,7 @@ if (primeiroAcesso) {
 }
   if (!loggedIn) {
   return (
-    <div className="nt-animated min-h-screen flex items-center justify-center bg-[var(--bg)] p-6">
+    <div className="nt-animated nutri-login-background min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-5 sm:p-8 shadow-lg">
         <h1 className="mb-2 text-3xl font-bold text-[var(--forest)]">
           NutriTrack
