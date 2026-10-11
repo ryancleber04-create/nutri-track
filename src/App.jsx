@@ -664,12 +664,13 @@ const enviarConvitePaciente = async () => {
   panturrilha_medial: "",
   observacoes: "",
 });
+
 const carregarMedicoes = async () => {
   if (!client?.id) return;
 
-  try {
-    setLoadingMedicoes(true);
+  setLoadingMedicoes(true);
 
+  try {
     const {
       data: { user },
       error: authError,
@@ -686,10 +687,12 @@ const carregarMedicoes = async () => {
       .eq("nutricionista_id", user.id)
       .order("data_medicao", { ascending: false });
 
-    if (error) {
-      console.error("Erro ao carregar medições:", error);
-      throw error;
-    }
+    console.log("Paciente selecionado:", client.id);
+    console.log("Nutricionista:", user.id);
+    console.log("Medições retornadas:", data);
+    console.log("Erro na consulta:", error);
+
+    if (error) throw error;
 
     const formatadas = (data || []).map((item) => ({
       id: item.id,
@@ -711,6 +714,7 @@ const carregarMedicoes = async () => {
     setLoadingMedicoes(false);
   }
 };
+
 
 useEffect(() => {
   carregarMedicoes();
@@ -1074,26 +1078,28 @@ setEditingAvaliacao(null);
 };
 
 
- const entries = [...avaliacoes]
-  .filter((item) => item.peso != null && item.data_avaliacao)
+
+const entries = [...medicoes]
+  .filter((item) => item.weight != null && item.date)
   .sort(
     (a, b) =>
-      new Date(a.data_avaliacao) - new Date(b.data_avaliacao)
+      new Date(a.date) - new Date(b.date)
   )
   .map((item) => ({
-  id: item.id,
-  date: item.data_avaliacao,
-  label: new Date(
-    item.data_avaliacao + "T12:00:00"
-  ).toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-  }),
-  weight: Number(item.peso),
-  waist: item.cintura,
-  hip: item.quadril,
-  bodyFat: item.percentual_gordura,
-}));
+    id: item.id,
+    date: item.date,
+    label: new Date(
+      item.date + "T12:00:00"
+    ).toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+    }),
+    weight: Number(item.weight),
+    waist: item.waist,
+    hip: item.hip,
+    bodyFat: item.bodyFat,
+  }));
+
 
   const cw = currentWeight(client);
   const bmi = calcBMI(cw, client.height);
@@ -2133,7 +2139,151 @@ if (!planoPDF) {
     y += 10;
   }
 }
+// =====================================
+// GRÁFICO DE EVOLUÇÃO DO PESO
+// =====================================
 
+// Usa as medições já carregadas no painel do paciente
+const dadosGrafico = [...medicoesPaciente]
+  .filter((item) => item.peso != null && item.data_medicao)
+  .sort(
+    (a, b) =>
+      new Date(a.data_medicao) - new Date(b.data_medicao)
+  );
+
+if (dadosGrafico.length > 0) {
+  // Nova página exclusiva para o gráfico
+  pdf.addPage();
+
+  pdf.setFillColor(47, 75, 60);
+  pdf.rect(0, 0, 210, 35, "F");
+
+  pdf.setTextColor(255, 255, 255);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(18);
+  pdf.text("Evolucao do peso", 15, 22);
+
+  const pesosGrafico = dadosGrafico.map((item) =>
+    Number(item.peso)
+  );
+
+  const menorPeso = Math.min(...pesosGrafico);
+  const maiorPeso = Math.max(...pesosGrafico);
+
+  const minimo = Math.min(menorPeso, meta ?? menorPeso) - 2;
+  const maximo = Math.max(maiorPeso, meta ?? maiorPeso) + 2;
+  const intervalo = maximo - minimo || 1;
+
+  const xInicio = 30;
+  const xFim = 190;
+  const yTopo = 65;
+  const yBase = 180;
+
+  const obterY = (peso) =>
+    yBase - ((peso - minimo) / intervalo) * (yBase - yTopo);
+
+  const obterX = (indice) =>
+    dadosGrafico.length === 1
+      ? (xInicio + xFim) / 2
+      : xInicio +
+        (indice / (dadosGrafico.length - 1)) *
+          (xFim - xInicio);
+
+  // Linhas horizontais e valores de referência
+  pdf.setFontSize(9);
+
+  for (let i = 0; i <= 5; i++) {
+    const peso = minimo + (intervalo / 5) * i;
+    const yLinha = obterY(peso);
+
+    pdf.setDrawColor(230, 235, 226);
+    pdf.line(xInicio, yLinha, xFim, yLinha);
+
+    pdf.setTextColor(108, 125, 100);
+    pdf.text(peso.toFixed(1), 25, yLinha + 1, {
+      align: "right",
+    });
+  }
+
+  // Linha da meta
+  if (meta != null && Number.isFinite(Number(meta))) {
+    const yMeta = obterY(Number(meta));
+
+    pdf.setDrawColor(184, 137, 47);
+    pdf.setLineDashPattern([3, 2], 0);
+    pdf.line(xInicio, yMeta, xFim, yMeta);
+    pdf.setLineDashPattern([], 0);
+
+    pdf.setTextColor(184, 137, 47);
+    pdf.text("Meta", xFim, yMeta - 3, {
+      align: "right",
+    });
+  }
+
+  // Linha do peso
+  pdf.setDrawColor(47, 75, 60);
+  pdf.setLineWidth(0.8);
+
+  dadosGrafico.forEach((item, indice) => {
+    const x = obterX(indice);
+    const y = obterY(Number(item.peso));
+
+    if (indice > 0) {
+      const anterior = dadosGrafico[indice - 1];
+
+      pdf.line(
+        obterX(indice - 1),
+        obterY(Number(anterior.peso)),
+        x,
+        y
+      );
+    }
+
+    pdf.setFillColor(47, 75, 60);
+    pdf.circle(x, y, 1.8, "F");
+
+    pdf.setTextColor(47, 75, 60);
+    pdf.setFontSize(8);
+    pdf.text(
+      `${Number(item.peso).toFixed(1)} kg`,
+      x,
+      y - 5,
+      { align: "center" }
+    );
+
+    const data = new Date(
+      `${item.data_medicao}T12:00:00`
+    ).toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+    });
+
+    pdf.setTextColor(108, 125, 100);
+    pdf.text(data, x, yBase + 8, {
+      align: "center",
+    });
+  });
+
+  // Resumo da evolução
+  const pesoInicial = pesosGrafico[0];
+  const pesoAtual = pesosGrafico[pesosGrafico.length - 1];
+  const variacao = pesoAtual - pesoInicial;
+
+  pdf.setFillColor(245, 247, 242);
+  pdf.roundedRect(15, 210, 180, 35, 3, 3, "F");
+
+  pdf.setTextColor(47, 75, 60);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(11);
+
+  pdf.text(`Peso inicial: ${pesoInicial.toFixed(1)} kg`, 22, 222);
+  pdf.text(`Peso atual: ${pesoAtual.toFixed(1)} kg`, 22, 231);
+  pdf.text(
+    `Variacao: ${variacao > 0 ? "+" : ""}${variacao.toFixed(1)} kg`,
+    110,
+    222
+  );
+}
 // =========================
 // RODAPÉ
 // =========================
@@ -3545,6 +3695,7 @@ export default function NutriTrackApp() {
   const [planoPaciente, setPlanoPaciente] = useState(null);
   const [refeicoesPaciente, setRefeicoesPaciente] = useState([]);
   const [avaliacoesPaciente, setAvaliacoesPaciente] = useState([]);
+  const [avaliacaoAberta, setAvaliacaoAberta] = useState(null);
   const [carregandoResumo, setCarregandoResumo] = useState(false);
   const [erroResumo, setErroResumo] = useState("");
 
@@ -3555,6 +3706,453 @@ const [nutricionista, setNutricionista] = useState({
   confirmarSenha: "",
 });
 
+
+const gerarPDFAvaliacao = (avaliacao) => {
+  
+  if (!avaliacao) return;
+
+  const pdf = new jsPDF("p", "mm", "a4");
+  const nomeNutricionista =
+    nutricionista?.nome?.trim() || "Não informado";
+  const W = 210;
+  const H = 297;
+  const M = 16;
+  const verde = [47, 75, 60];
+  const verdeClaro = [237, 242, 234];
+  const cinza = [100, 116, 105];
+  const preto = [34, 48, 31];
+  const dourado = [184, 137, 47];
+
+  let y = 0;
+
+  const texto = (valor, fallback = "Não informado") => {
+    return valor === null || valor === undefined || valor === ""
+      ? fallback
+      : String(valor);
+  };
+
+  const numero = (valor, casas = 1) => {
+    if (valor === null || valor === undefined || valor === "") return null;
+    const n = Number(valor);
+    return Number.isFinite(n) ? n.toFixed(casas) : null;
+  };
+
+  const dataBR = (data) => {
+    if (!data) return "Não informada";
+    const parte = String(data).slice(0, 10);
+    const [ano, mes, dia] = parte.split("-");
+    return dia && mes && ano ? `${dia}/${mes}/${ano}` : parte;
+  };
+
+  const nomePaciente = dadosPaciente?.nome || "Paciente";
+  const alturaCm = avaliacao.altura ?? dadosPaciente?.altura;
+  const peso = avaliacao.peso;
+  const pesoInicial = dadosPaciente?.peso_inicial;
+  const pesoMeta = dadosPaciente?.peso_meta;
+
+  const variacaoPeso =
+  Number.isFinite(Number(peso)) &&
+  Number.isFinite(Number(pesoInicial)) &&
+  peso != null &&
+  pesoInicial != null
+    ? Number(peso) - Number(pesoInicial)
+    : null;
+
+  const alturaM = Number(alturaCm) / 100;
+  const imcCalculado =
+    Number(peso) > 0 && alturaM > 0
+      ? Number(peso) / (alturaM * alturaM)
+      : null;
+
+  const imc = avaliacao.imc ?? imcCalculado;
+
+  const classificacaoIMC = (valor) => {
+    const n = Number(valor);
+    if (!Number.isFinite(n)) return "Não informado";
+    if (n < 18.5) return "Baixo peso";
+    if (n < 25) return "Peso adequado";
+    if (n < 30) return "Sobrepeso";
+    if (n < 35) return "Obesidade grau I";
+    if (n < 40) return "Obesidade grau II";
+    return "Obesidade grau III";
+  };
+
+  const cabecalho = (subtitulo) => {
+    pdf.setFillColor(...verde);
+    pdf.rect(0, 0, W, 34, "F");
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(21);
+    pdf.text("NutriTrack", M, 17);
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.text(subtitulo, M, 25);
+
+    pdf.setTextColor(...preto);
+    y = 45;
+  };
+
+  const tituloSecao = (titulo) => {
+    if (y > 264) {
+      pdf.addPage();
+      cabecalho("Relatório de acompanhamento nutricional");
+    }
+
+    pdf.setFillColor(...verdeClaro);
+    pdf.roundedRect(M, y, W - M * 2, 10, 2, 2, "F");
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(11);
+    pdf.setTextColor(...verde);
+    pdf.text(titulo, M + 4, y + 6.6);
+
+    y += 15;
+  };
+
+  const linha = (rotulo, valor, unidade = "") => {
+    if (y > 276) {
+      pdf.addPage();
+      cabecalho("Relatório de acompanhamento nutricional");
+    }
+
+    pdf.setDrawColor(225, 231, 223);
+    pdf.line(M, y + 7, W - M, y + 7);
+
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "normal");
+    pdf.setTextColor(...cinza);
+    pdf.text(rotulo, M + 2, y + 4);
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(...preto);
+
+    const valorFinal = texto(valor);
+    const exibicao =
+      valorFinal === "Não informado"
+        ? valorFinal
+        : `${valorFinal}${unidade ? " " + unidade : ""}`;
+
+    pdf.text(exibicao, W - M - 2, y + 4, { align: "right" });
+    y += 10;
+  };
+
+  const indicador = (x, largura, titulo, valor, detalhe) => {
+    pdf.setFillColor(247, 249, 245);
+    pdf.setDrawColor(220, 228, 217);
+    pdf.roundedRect(x, y, largura, 25, 3, 3, "FD");
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8);
+    pdf.setTextColor(...cinza);
+    pdf.text(titulo, x + 4, y + 6);
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(15);
+    pdf.setTextColor(...verde);
+    pdf.text(valor, x + 4, y + 16);
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(7);
+    pdf.setTextColor(...cinza);
+    pdf.text(detalhe, x + 4, y + 21);
+  };
+
+  // PÁGINA 1 — IDENTIFICAÇÃO E INDICADORES
+  cabecalho("Relatório de avaliação antropométrica");
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(17);
+  pdf.setTextColor(...verde);
+  pdf.text("Relatório de acompanhamento", M, y);
+  y += 9;
+
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(10);
+  pdf.setTextColor(...preto);
+  pdf.text(`Paciente: ${nomePaciente}`, M, y);
+  y += 6;
+  pdf.text(`Data da avaliação: ${dataBR(avaliacao.data_avaliacao)}`, M, y);
+  y += 6;
+  pdf.text(`Emitido em: ${new Date().toLocaleDateString("pt-BR")}`, M, y);
+  y += 12;
+
+  const larguraCard = (W - M * 2 - 12) / 3;
+
+  indicador(
+    M,
+    larguraCard,
+    "Peso avaliado",
+    numero(peso) !== null ? `${numero(peso)} kg` : "—",
+    "Avaliação selecionada"
+  );
+
+  indicador(
+    M + larguraCard + 6,
+    larguraCard,
+    "Índice de massa corporal",
+    numero(imc, 2) ?? "—",
+    "IMC"
+  );
+
+  indicador(
+    M + (larguraCard + 6) * 2,
+    larguraCard,
+    "Gordura corporal",
+    numero(avaliacao.percentual_gordura) !== null
+      ? `${numero(avaliacao.percentual_gordura)}%`
+      : "—",
+    "Percentual registrado"
+  );
+
+  y += 34;
+  
+tituloSecao("Responsável pelo acompanhamento");
+linha("Nutricionista", nomeNutricionista);
+y += 5;
+  tituloSecao("Resumo do acompanhamento");
+  linha(
+  "Variação do peso",
+  variacaoPeso !== null
+    ? `${variacaoPeso > 0 ? "+" : ""}${variacaoPeso.toFixed(1)}`
+    : null,
+  "kg"
+);
+  linha("Peso inicial", numero(pesoInicial), "kg");
+  linha("Meta de peso", numero(pesoMeta), "kg");
+  linha("Altura", numero(alturaCm, 0), "cm");
+  linha("Classificação do IMC", classificacaoIMC(imc));
+  y += 5;
+
+  tituloSecao("Medidas antropométricas");
+
+  const medidas = [
+    ["Peso", "peso", "kg"],
+    ["Altura", "altura", "cm"],
+    ["IMC", "imc", ""],
+    ["Gordura corporal", "percentual_gordura", "%"],
+    ["Pescoço", "pescoco", "cm"],
+    ["Tórax / peitoral", "torax", "cm"],
+    ["Braço relaxado", "braco_relaxado", "cm"],
+    ["Braço contraído", "braco_contraido", "cm"],
+    ["Antebraço", "antebraco", "cm"],
+    ["Cintura", "cintura", "cm"],
+    ["Abdômen", "abdomen", "cm"],
+    ["Quadril", "quadril", "cm"],
+    ["Coxa", "coxa", "cm"],
+    ["Panturrilha", "panturrilha", "cm"],
+    ["Prega tricipital", "tricipital", "mm"],
+    ["Prega bicipital", "bicipital", "mm"],
+    ["Prega subescapular", "subescapular", "mm"],
+    ["Prega supra-ilíaca", "supra_iliaca", "mm"],
+    ["Prega abdominal", "prega_abdominal", "mm"],
+    ["Prega peitoral", "prega_peitoral", "mm"],
+    ["Prega axilar média", "axilar_media", "mm"],
+    ["Prega coxa medial", "coxa_medial", "mm"],
+    ["Prega panturrilha medial", "panturrilha_medial", "mm"],
+  ];
+
+  medidas.forEach(([rotulo, campo, unidade]) => {
+  if (y > 266) {
+    pdf.addPage();
+    cabecalho("Relatório de acompanhamento nutricional");
+    tituloSecao("Medidas antropométricas — continuação");
+  }
+
+  let valor = avaliacao[campo];
+
+  if (campo === "altura") valor = alturaCm;
+  if (campo === "imc") valor = imc;
+
+  linha(
+    rotulo,
+    valor === null || valor === undefined || valor === ""
+      ? null
+      : numero(valor, campo === "imc" ? 2 : 1),
+    unidade
+  );
+});
+
+  // GRÁFICO VETORIAL — NÃO É PRINT DA TELA
+  pdf.addPage();
+  cabecalho("Evolução do peso");
+
+  tituloSecao("Gráfico de evolução do peso");
+
+  const historico = [...(medicoesPaciente || [])]
+    .filter((item) => {
+      const pesoItem = Number(item.peso);
+      return item.data_medicao && Number.isFinite(pesoItem) && pesoItem > 0;
+    })
+    .sort(
+      (a, b) =>
+        new Date(a.data_medicao) - new Date(b.data_medicao)
+    );
+
+  const gx = 29;
+  const gy = y + 9;
+  const gw = 158;
+  const gh = 80;
+
+  pdf.setFillColor(250, 251, 249);
+  pdf.setDrawColor(225, 231, 223);
+  pdf.roundedRect(M, gy - 10, W - M * 2, 111, 3, 3, "FD");
+
+  if (historico.length > 0) {
+    
+const valores = historico.map((item) => Number(item.peso));
+
+let min = Math.min(...valores);
+let max = Math.max(...valores);
+
+// Margem para os pontos não ficarem nas bordas
+const margem = Math.max((max - min) * 0.15, 0.5);
+
+min -= margem;
+max += margem;
+
+
+    const posY = (valor) =>
+      gy + gh - ((valor - min) / (max - min)) * gh;
+
+    const posX = (indice) =>
+      historico.length === 1
+        ? gx + gw / 2
+        : gx + (indice / (historico.length - 1)) * gw;
+
+    // Grade e valores do eixo Y
+    for (let i = 0; i <= 4; i++) {
+      const yy = gy + (i / 4) * gh;
+      const valor = max - (i / 4) * (max - min);
+
+      pdf.setDrawColor(228, 234, 226);
+      pdf.setLineWidth(0.2);
+      pdf.line(gx, yy, gx + gw, yy);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(7);
+      pdf.setTextColor(...cinza);
+      pdf.text(`${valor.toFixed(1)}`, gx - 3, yy + 2, {
+        align: "right",
+      });
+    }
+
+    // Linha da meta
+    {/* Este trecho é JavaScript, dentro da função do PDF */}
+
+if (pesoMeta != null && Number(pesoMeta) > 0) {
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(8);
+  pdf.setTextColor(...dourado);
+
+  pdf.text(
+    `Meta de peso: ${Number(pesoMeta).toFixed(1)} kg`,
+    gx + gw,
+    gy - 4,
+    { align: "right" }
+  );
+}
+
+
+    // Linha da evolução
+    pdf.setDrawColor(...verde);
+    pdf.setLineWidth(1);
+
+    for (let i = 1; i < historico.length; i++) {
+      pdf.line(
+        posX(i - 1),
+        posY(Number(historico[i - 1].peso)),
+        posX(i),
+        posY(Number(historico[i].peso))
+      );
+    }
+
+    // Pontos
+    historico.forEach((item, i) => {
+      const px = posX(i);
+      const py = posY(Number(item.peso));
+
+      pdf.setFillColor(...verde);
+      pdf.circle(px, py, 1.5, "F");
+
+      // Evita sobreposição de datas em históricos grandes
+      if (
+        historico.length <= 8 ||
+        i % Math.ceil(historico.length / 7) === 0 ||
+        i === historico.length - 1
+      ) {
+        pdf.setFontSize(7);
+        pdf.setTextColor(...cinza);
+        pdf.text(dataBR(item.data_medicao).slice(0, 5), px, gy + gh + 7, {
+          align: "center",
+        });
+      }
+    });
+
+    pdf.setFontSize(8);
+    pdf.setTextColor(...cinza);
+    pdf.text("Peso (kg)", gx, gy - 4);
+  } else {
+    pdf.setFontSize(11);
+    pdf.setTextColor(...cinza);
+    pdf.text(
+      "Nenhuma medição disponível para o gráfico.",
+      W / 2,
+      gy + gh / 2,
+      { align: "center" }
+    );
+  }
+
+  y = gy + 115;
+
+  tituloSecao("Histórico das medições");
+
+  if (historico.length === 0) {
+    linha("Medições", "Nenhum registro encontrado");
+  } else {
+    historico.forEach((item) => {
+      linha(
+        dataBR(item.data_medicao),
+        numero(item.peso),
+        "kg"
+      );
+    });
+  }
+
+  // Rodapé e numeração
+  const totalPaginas = pdf.getNumberOfPages();
+
+  for (let pagina = 1; pagina <= totalPaginas; pagina++) {
+    pdf.setPage(pagina);
+
+    pdf.setDrawColor(220, 228, 217);
+    pdf.line(M, H - 17, W - M, H - 17);
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8);
+    pdf.setTextColor(...cinza);
+    pdf.text(
+      "NutriTrack | Relatório de acompanhamento nutricional",
+      M,
+      H - 11
+    );
+    pdf.text(
+      `Página ${pagina} de ${totalPaginas}`,
+      W - M,
+      H - 11,
+      { align: "right" }
+    );
+  }
+
+  const nomeArquivo = nomePaciente
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .toLowerCase();
+
+  pdf.save(`nutritrack-relatorio-${nomeArquivo}.pdf`);
+};
 
 
   const [clients, setClients] = useState([]);
@@ -3941,15 +4539,45 @@ useEffect(() => {
           .eq("paciente_id", dadosPaciente.id)
           .order("data_avaliacao", { ascending: false }),
       ]);
+
+      console.log("ID do paciente:", dadosPaciente.id);
+      console.log("Plano retornado:", resPlano.data);
+      console.log("Erro do plano:", resPlano.error);
+
       if (resPlano.error) throw resPlano.error;
       if (resAvaliacoes.error) throw resAvaliacoes.error;
       let refeicoes = [];
       if (resPlano.data?.id) {
-        const resposta = await supabase.from("refeicoes").select("*")
-          .eq("plano_id", resPlano.data.id).order("horario", { ascending: true });
-        if (resposta.error) throw resposta.error;
-        refeicoes = resposta.data || [];
+  // Buscar as refeições do plano
+  const { data: listaRefeicoes, error: erroRefeicoes } =
+    await supabase
+      .from("refeicoes")
+      .select("*")
+      .eq("plano_id", resPlano.data.id)
+      .order("horario", { ascending: true });
+
+  if (erroRefeicoes) throw erroRefeicoes;
+
+  // Buscar os alimentos de cada refeição
+  refeicoes = await Promise.all(
+    (listaRefeicoes || []).map(async (refeicao) => {
+      const { data: alimentos, error: erroAlimentos } =
+        await supabase
+          .from("alimentos_refeicao")
+          .select("*")
+          .eq("refeicao_id", refeicao.id);
+
+      if (erroAlimentos) {
+        console.error("Erro ao carregar alimentos:", erroAlimentos);
       }
+
+      return {
+        ...refeicao,
+        alimentos: alimentos || [],
+      };
+    })
+  );
+}
       if (ativo) {
         setPlanoPaciente(resPlano.data || null);
         setRefeicoesPaciente(refeicoes);
@@ -4408,24 +5036,226 @@ if (tipoUsuario === "paciente") {
                 <div key={refeicao.id} className="rounded-xl bg-[#F5F7F2] border border-[#E9EEE2] p-4">
                   <div className="flex items-center justify-between gap-3"><strong className="text-[#2F4B3C] text-sm">{refeicao.nome || "Refeição"}</strong><span className="text-xs text-[#6C7D64] whitespace-nowrap">{refeicao.horario?.slice(0, 5) || ""}</span></div>
                   {refeicao.observacoes && <p className="text-xs text-[#6C7D64] mt-2">{refeicao.observacoes}</p>}
-                </div>
-              ))}</div>
+        
+                  {/* Alimentos da refeição */}
+<div className="mt-3 space-y-2">
+  {refeicao.alimentos?.length > 0 ? (
+    refeicao.alimentos.map((alimento) => (
+      <div
+        key={alimento.id}
+        className="rounded-lg border border-[#C7D2BF] bg-white p-3"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <strong className="text-sm text-[#2F4B3C]">
+            {alimento.alimento}
+          </strong>
+
+          <span className="text-xs text-[#6C7D64]">
+            {alimento.quantidade} {alimento.unidade}
+          </span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[#6C7D64]">
+          <p>Calorias: {Number(alimento.calorias || 0).toFixed(1)} kcal</p>
+          <p>Proteínas: {Number(alimento.proteinas || 0).toFixed(1)} g</p>
+          <p>Carboidratos: {Number(alimento.carboidratos || 0).toFixed(1)} g</p>
+          <p>Gorduras: {Number(alimento.gorduras || 0).toFixed(1)} g</p>
+        </div>
+
+        {alimento.observacoes && (
+          <p className="mt-2 text-xs text-[#6C7D64]">
+            {alimento.observacoes}
+          </p>
+        )}
+      </div>
+    ))
+  ) : (
+    <p className="mt-2 text-xs text-[#6C7D64]">
+      Nenhum alimento cadastrado nesta refeição.
+    </p>
+  )}
+</div>
+                              </div>
+              ))}
+              </div>
             )}
           </section>
         </div>
+
         <section className="rounded-2xl bg-white p-6 border border-[#C7D2BF] shadow-sm mb-6">
-          <div className="flex items-center gap-2 mb-2 text-[#2F4B3C]"><ClipboardList size={20}/><h3 className="text-xl font-bold">Minhas avaliações</h3></div>
-          <p className="text-sm text-[#6C7D64] mb-5">Resultados das avaliações antropométricas registradas</p>
-          {carregandoResumo ? <p className="nt-loading text-sm text-[#6C7D64]">Carregando avaliações...</p> : avaliacoesPaciente.length === 0 ? <p className="rounded-xl bg-[#F5F7F2] p-5 text-sm text-[#6C7D64]">Nenhuma avaliação cadastrada até o momento.</p> : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">{avaliacoesPaciente.map(avaliacao => (
-              <article key={avaliacao.id} className="rounded-xl border border-[#E9EEE2] bg-[#F5F7F2] p-4">
-                <div className="flex items-center gap-2 text-sm font-semibold text-[#2F4B3C] mb-3"><Calendar size={16}/>{fmtDate(avaliacao.data_avaliacao)}</div>
-                <div className="grid grid-cols-2 gap-2 text-sm"><span>Peso</span><strong>{avaliacao.peso != null ? `${avaliacao.peso} kg` : "—"}</strong><span>IMC</span><strong>{avaliacao.imc != null ? Number(avaliacao.imc).toFixed(2) : "—"}</strong><span>Gordura</span><strong>{avaliacao.percentual_gordura != null ? `${avaliacao.percentual_gordura}%` : "—"}</strong></div>
-              </article>
-            ))}</div>
-          )}
-        </section>
-        <p className="text-xs text-center text-[#6C7D64] pb-5">NutriTrack • Seu acompanhamento em cada etapa</p>
+  <div className="flex items-center gap-2 mb-2 text-[#2F4B3C]">
+    <ClipboardList size={20} />
+    <h3 className="text-xl font-bold">Minhas avaliações</h3>
+  </div>
+
+  <p className="text-sm text-[#6C7D64] mb-5">
+    Resultados das avaliações antropométricas registradas
+  </p>
+
+  {carregandoResumo ? (
+    <p>Carregando avaliações...</p>
+  ) : avaliacoesPaciente.length === 0 ? (
+    <p className="rounded-xl bg-[#F5F7F2] p-5 text-sm text-[#6C7D64]">
+      Nenhuma avaliação cadastrada até o momento.
+    </p>
+  ) : (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      {avaliacoesPaciente.map((avaliacao) => (
+        <article
+          key={avaliacao.id}
+          className="rounded-xl border border-[#E9EEE2] bg-[#F5F7F2] p-4"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-[#2F4B3C] mb-3">
+            <Calendar size={16} />
+            {fmtDate(avaliacao.data_avaliacao)}
+          </div>
+
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span>Peso</span>
+              <strong>
+                {avaliacao.peso != null ? `${avaliacao.peso} kg` : "—"}
+              </strong>
+            </div>
+
+            <div className="flex justify-between">
+              <span>IMC</span>
+              <strong>
+                {avaliacao.imc != null
+                  ? Number(avaliacao.imc).toFixed(2)
+                  : "—"}
+              </strong>
+            </div>
+
+            <div className="flex justify-between">
+              <span>Gordura corporal</span>
+              <strong>
+                {avaliacao.percentual_gordura != null
+                  ? `${avaliacao.percentual_gordura}%`
+                  : "—"}
+              </strong>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setAvaliacaoAberta(avaliacao)}
+            className="mt-4 w-full rounded-lg bg-[#2F4B3C] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+          >
+            Ver avaliação completa
+          </button>
+          <button
+  type="button"
+  onClick={() => gerarPDFAvaliacao(avaliacao)}
+  className="mt-2 w-full rounded-lg border border-[#2F4B3C] bg-white px-4 py-2 text-sm font-semibold text-[#2F4B3C] hover:bg-[#E9EEE2]"
+>
+  Baixar relatório PDF
+</button>
+        </article>
+              ))}
+        </div>
+      )}
+    </section>
+
+    {avaliacaoAberta && (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={() => setAvaliacaoAberta(null)}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Detalhes da avaliação"
+        className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-bold text-[#2F4B3C]">
+            Avaliação completa
+          </h3>
+
+          <button
+            type="button"
+            onClick={() => setAvaliacaoAberta(null)}
+            className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100"
+          >
+            Fechar ✕
+          </button>
+        </div>
+
+        <p className="text-sm text-[#6C7D64] mb-5">
+          Data: {fmtDate(avaliacaoAberta.data_avaliacao)}
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {[
+            ["Peso", "peso", "kg"],
+            ["Altura", "altura", "cm"],
+            ["IMC", "imc", ""],
+            ["Gordura corporal", "percentual_gordura", "%"],
+            ["Pescoço", "pescoco", "cm"],
+            ["Tórax / peitoral", "torax", "cm"],
+            ["Braço relaxado", "braco_relaxado", "cm"],
+            ["Braço contraído", "braco_contraido", "cm"],
+            ["Antebraço", "antebraco", "cm"],
+            ["Cintura", "cintura", "cm"],
+            ["Abdômen", "abdomen", "cm"],
+            ["Quadril", "quadril", "cm"],
+            ["Coxa", "coxa", "cm"],
+            ["Panturrilha", "panturrilha", "cm"],
+            ["Prega tricipital", "tricipital", "mm"],
+            ["Prega bicipital", "bicipital", "mm"],
+            ["Prega subescapular", "subescapular", "mm"],
+            ["Prega supra-ilíaca", "supra_iliaca", "mm"],
+            ["Prega abdominal", "prega_abdominal", "mm"],
+            ["Prega peitoral", "prega_peitoral", "mm"],
+            ["Prega axilar média", "axilar_media", "mm"],
+            ["Prega coxa medial", "coxa_medial", "mm"],
+            ["Prega panturrilha medial", "panturrilha_medial", "mm"],
+          ].map(([rotulo, campo, unidade]) => (
+            <div
+              key={campo}
+              className="rounded-lg border border-[#E9EEE2] bg-[#F5F7F2] p-3"
+            >
+              <p className="text-xs text-[#6C7D64]">{rotulo}</p>
+              <p className="font-semibold text-[#2F4B3C]">
+                {campo === "altura"
+  ? (
+      avaliacaoAberta.altura != null
+        ? `${avaliacaoAberta.altura} cm`
+        : dadosPaciente?.altura != null
+          ? `${dadosPaciente.altura} cm`
+          : "Não informado"
+    )
+  : avaliacaoAberta[campo] != null
+    ? `${avaliacaoAberta[campo]} ${unidade}`
+    : "Não informado"}
+              </p>
+              {campo === "imc" && avaliacaoAberta.imc != null && (
+  <p className="mt-1 text-xs font-medium text-[#6C7D64]">
+    {Number(avaliacaoAberta.imc) < 18.5
+      ? "Abaixo do peso"
+      : Number(avaliacaoAberta.imc) < 25
+      ? "Peso adequado"
+      : Number(avaliacaoAberta.imc) < 30
+      ? "Sobrepeso"
+      : Number(avaliacaoAberta.imc) < 35
+      ? "Obesidade grau I"
+      : Number(avaliacaoAberta.imc) < 40
+      ? "Obesidade grau II"
+      : "Obesidade grau III"}
+  </p>
+)}
+                      </div>
+                ))}
+      </div>
+    </div>
+  </div>
+)}
+
+<p className="text-xs text-center text-[#6C7D64] pb-5">
+  NutriTrack • Seu acompanhamento em cada etapa
+</p>
       </main>
     </div>
   );
