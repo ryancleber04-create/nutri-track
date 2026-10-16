@@ -3729,12 +3729,32 @@ if (pesoMeta != null && Number(pesoMeta) > 0) {
   if (erroNutri) throw erroNutri;
 
   if (nutri) {
-    setNomeNutricionistaLogado(nutri.nome || "");
-    setTipoUsuario("nutricionista");
-    setUsuarioAtual(user);
-    setDadosPaciente(null);
-    return true;
+  const { data: consentimento, error: erroConsentimento } = await supabase
+    .from("consentimentos")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("tipo", "nutricionista_termos")
+    .eq("versao", VERSAO_POLITICA)
+    .limit(1)
+    .maybeSingle();
+
+  if (erroConsentimento) {
+    console.error("Erro ao verificar consentimento:", erroConsentimento);
+    throw erroConsentimento;
   }
+
+  if (!consentimento) {
+    console.log("Nutricionista precisa aceitar a política atual.");
+    // Por enquanto, não bloqueia o acesso.
+    // No próximo passo, exibiremos a tela de aceite.
+  }
+
+  setNomeNutricionistaLogado(nutri.nome || "");
+  setTipoUsuario("nutricionista");
+  setUsuarioAtual(user);
+  setDadosPaciente(null);
+  return true;
+}
 
   // Verifica se é paciente
   const { data: paciente, error: erroPaciente } = await supabase
@@ -4604,8 +4624,16 @@ if (primeiroAcesso) {
     return;
   }
 
-  await registrarConsentimento("nutricionista_termos");
+  const consentimentoRegistrado = await registrarConsentimento(
+  "nutricionista_termos"
+);
 
+if (!consentimentoRegistrado) {
+  notify(
+    "Conta criada, mas não foi possível registrar o aceite dos termos. Entre em contato com o suporte."
+  );
+  return;
+}
   notify("Conta criada com sucesso!");
 
   setAceiteTermos(false);

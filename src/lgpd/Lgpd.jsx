@@ -174,20 +174,24 @@ export function AceiteLgpd({ checked, onChange, onAbrirPolitica, children }) {
   );
 }
 
-/* Guarda a prova do aceite (tabela "consentimentos"; veja supabase/lgpd_e_seguranca.sql). */
+/* Guarda a prova do aceite (tabela "consentimentos"; veja supabase/lgpd_e_seguranca.sql).
+   Devolve true/false e nunca lança erro: o cadastro não pode quebrar se o registro falhar. */
 export async function registrarConsentimento(tipo) {
   try {
     const {
       data: { user },
+      error: erroUsuario,
     } = await supabase.auth.getUser();
-    if (!user) return false;
+
+    // Sem sessão (ex.: e-mail ainda não confirmado) não há como gravar. É esperado, não é erro.
+    if (erroUsuario || !user) return false;
 
     const { error } = await supabase
       .from("consentimentos")
       .insert({ user_id: user.id, tipo, versao: VERSAO_POLITICA });
 
     if (error) {
-      console.warn("Consentimento não registrado na tabela:", error.message);
+      console.warn("Consentimento não registrado:", error.message);
       return false;
     }
     return true;
@@ -195,6 +199,28 @@ export async function registrarConsentimento(tipo) {
     console.warn("Consentimento não registrado:", erro?.message);
     return false;
   }
+}
+
+/* Confere se o usuário já aceitou ESTA versão da política (para pedir novo aceite quando ela mudar).
+   Devolve true/false. Lança erro se a consulta falhar (ex.: tabela ainda não criada),
+   para quem chamar decidir se bloqueia o acesso ou segue. */
+export async function verificarConsentimento(tipo) {
+  const {
+    data: { user },
+    error: erroUsuario,
+  } = await supabase.auth.getUser();
+  if (erroUsuario || !user) return false;
+
+  const { data, error } = await supabase
+    .from("consentimentos")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("tipo", tipo)
+    .eq("versao", VERSAO_POLITICA)
+    .limit(1);
+
+  if (error) throw error;
+  return (data?.length ?? 0) > 0;
 }
 
 /* Portabilidade / acesso (art. 18, II e V): baixa os dados do paciente em JSON. */
