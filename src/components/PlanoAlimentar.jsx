@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Utensils, X, Pencil, Trash2 } from "lucide-react";
 import { supabase } from "../supabase";
+import { notify } from "../ui/toast";
 
 export default function PlanoAlimentar({ client }) {
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
@@ -137,9 +138,6 @@ const saldoNutricional = {
   ),
 };
 
-console.log("TOTAIS NUTRICIONAIS:", totaisNutricionais);
-console.log("METAS NUTRICIONAIS:", metasNutricionais);
-console.log("PERCENTUAIS:", percentuaisNutricionais);
 
   useEffect(() => {
   const carregarPlano = async () => {
@@ -230,7 +228,6 @@ const buscarAlimentos = async (texto) => {
     return;
   }
 
-  console.log("Pesquisando:", texto);
 
   try {
     const { data, error } = await supabase
@@ -239,8 +236,6 @@ const buscarAlimentos = async (texto) => {
       .ilike("nome", `%${texto.trim()}%`)
       .limit(20);
 
-    console.log("DATA:", data);
-    console.log("ERRO:", error);
 
     if (error) {
       console.error("Erro ao buscar alimentos:", error);
@@ -255,19 +250,19 @@ const buscarAlimentos = async (texto) => {
 };
   const salvarAlimentoRefeicao = async () => {
     if (!refeicaoSelecionada?.id) {
-      alert("Selecione uma refeição.");
+      notify("Selecione uma refeição.");
       return;
     }
 
     if (!alimentoSelecionado) {
-      alert("Selecione um alimento.");
+      notify("Selecione um alimento.");
       return;
     }
 
     const quantidade = Number(quantidadeAlimento);
 
     if (!quantidade || quantidade <= 0) {
-      alert("Digite a quantidade em gramas.");
+      notify("Digite a quantidade em gramas.");
       return;
     }
 
@@ -307,13 +302,12 @@ const buscarAlimentos = async (texto) => {
 
       if (error) {
         console.error("Erro Supabase:", error);
-        alert("Erro ao adicionar alimento.");
+        notify("Erro ao adicionar alimento.");
         return;
       }
 
-      console.log("Alimento adicionado:", data);
 
-      alert("Alimento adicionado com sucesso!");
+      notify("Alimento adicionado com sucesso!");
 
       setMostrarFormularioAlimento(false);
       setRefeicaoSelecionada(null);
@@ -324,7 +318,7 @@ const buscarAlimentos = async (texto) => {
 
     } catch (error) {
       console.error("Erro ao adicionar alimento:", error);
-      alert("Erro ao adicionar alimento.");
+      notify("Erro ao adicionar alimento.");
     }
   };
 
@@ -338,12 +332,12 @@ const buscarAlimentos = async (texto) => {
 
   const salvarPlano = async () => {
     if (!plano.nome.trim()) {
-      alert("Digite o nome do plano alimentar.");
+      notify("Digite o nome do plano alimentar.");
       return;
     }
 
     if (!plano.objetivo) {
-      alert("Selecione o objetivo.");
+      notify("Selecione o objetivo.");
       return;
     }
 
@@ -369,33 +363,33 @@ const buscarAlimentos = async (texto) => {
 
       if (error) {
         console.error("Erro ao salvar plano:", error);
-        alert("Não foi possível salvar o plano alimentar.");
+        notify("Não foi possível salvar o plano alimentar.");
         return;
       }
 
       setPlanoSalvo(data);
       setRefeicoes([]);
       setMostrarFormulario(false);
-      alert("Plano alimentar salvo com sucesso!");
+      notify("Plano alimentar salvo com sucesso!");
     } catch (error) {
       console.error("Erro ao salvar plano:", error);
-      alert("Erro ao salvar o plano alimentar.");
+      notify("Erro ao salvar o plano alimentar.");
     }
   };
 
   const salvarRefeicao = async () => {
     if (!refeicao.nome.trim()) {
-      alert("Digite o nome da refeição.");
+      notify("Digite o nome da refeição.");
       return;
     }
 
     if (!refeicao.horario) {
-      alert("Informe o horário da refeição.");
+      notify("Informe o horário da refeição.");
       return;
     }
 
     if (!planoSalvo?.id) {
-      alert("Salve o plano alimentar antes de adicionar uma refeição.");
+      notify("Salve o plano alimentar antes de adicionar uma refeição.");
       return;
     }
 if (refeicaoEditando) {
@@ -413,7 +407,7 @@ if (refeicaoEditando) {
 
     if (error) {
       console.error("Erro ao atualizar refeição:", error);
-      alert("Não foi possível atualizar a refeição.");
+      notify("Não foi possível atualizar a refeição.");
       return;
     }
 
@@ -432,11 +426,11 @@ if (refeicaoEditando) {
     setRefeicaoEditando(null);
     setMostrarFormularioRefeicao(false);
 
-    alert("Refeição atualizada com sucesso!");
+    notify("Refeição atualizada com sucesso!");
     return;
   } catch (error) {
     console.error("Erro ao atualizar refeição:", error);
-    alert("Erro ao atualizar a refeição.");
+    notify("Erro ao atualizar a refeição.");
     return;
   }
 }
@@ -456,17 +450,17 @@ if (refeicaoEditando) {
 
       if (error) {
         console.error("Erro ao salvar refeição:", error);
-        alert("Não foi possível salvar a refeição.");
+        notify("Não foi possível salvar a refeição.");
         return;
       }
 
       setRefeicoes((anteriores) => [...anteriores, data]);
       setRefeicao({ nome: "", horario: "", observacoes: "" });
       setMostrarFormularioRefeicao(false);
-      alert("Refeição salva com sucesso!");
+      notify("Refeição salva com sucesso!");
     } catch (error) {
       console.error("Erro ao salvar refeição:", error);
-      alert("Erro ao salvar a refeição.");
+      notify("Erro ao salvar a refeição.");
     }
   };
 const excluirRefeicao = async (id) => {
@@ -484,7 +478,7 @@ const excluirRefeicao = async (id) => {
 
     if (error) {
       console.error("Erro ao excluir refeição:", error);
-      alert("Não foi possível excluir a refeição.");
+      notify("Não foi possível excluir a refeição.");
       return;
     }
 
@@ -495,7 +489,7 @@ const excluirRefeicao = async (id) => {
 
   } catch (error) {
     console.error("Erro ao excluir refeição:", error);
-    alert("Erro ao excluir a refeição.");
+    notify("Erro ao excluir a refeição.");
   }
 };
 const editarRefeicao = (item) => {
@@ -511,19 +505,19 @@ const editarRefeicao = (item) => {
 };
 async function salvarAlimento() {
   if (!refeicaoSelecionada?.id) {
-    alert("Nenhuma refeição selecionada.");
+    notify("Nenhuma refeição selecionada.");
     return;
   }
 
   if (!alimentoSelecionado) {
-    alert("Selecione um alimento.");
+    notify("Selecione um alimento.");
     return;
   }
 
   const quantidade = Number(quantidadeAlimento);
 
   if (!quantidade || quantidade <= 0) {
-    alert("Informe uma quantidade válida.");
+    notify("Informe uma quantidade válida.");
     return;
   }
 
@@ -589,11 +583,10 @@ async function salvarAlimento() {
 
     if (error) {
       console.error("Erro ao salvar alimento:", error);
-      alert("Erro ao salvar alimento.");
+      notify("Erro ao salvar alimento.");
       return;
     }
 
-    console.log("Alimento salvo:", data);
 
     // ==========================================
     // ATUALIZA A LISTA NA TELA
@@ -648,14 +641,14 @@ async function salvarAlimento() {
     setRefeicaoSelecionada(null);
 
     if (estavaEditando) {
-      alert("Alimento atualizado com sucesso!");
+      notify("Alimento atualizado com sucesso!");
     } else {
-      alert("Alimento adicionado com sucesso!");
+      notify("Alimento adicionado com sucesso!");
     }
 
   } catch (erro) {
     console.error("Erro inesperado:", erro);
-    alert("Ocorreu um erro ao salvar o alimento.");
+    notify("Ocorreu um erro ao salvar o alimento.");
   }
 }
 async function excluirAlimento(alimentoId, refeicaoId) {
@@ -672,7 +665,7 @@ async function excluirAlimento(alimentoId, refeicaoId) {
 
   if (error) {
     console.error("Erro ao excluir alimento:", error);
-    alert("Não foi possível excluir o alimento.");
+    notify("Não foi possível excluir o alimento.");
     return;
   }
 
@@ -692,7 +685,7 @@ async function excluirAlimento(alimentoId, refeicaoId) {
     })
   );
 
-  alert("Alimento excluído com sucesso!");
+  notify("Alimento excluído com sucesso!");
 }
 function editarAlimento(alimento, refeicao) {
   setAlimentoEditando(alimento);
@@ -741,7 +734,7 @@ async function excluirAlimento(alimentoId, refeicaoId) {
 
     if (error) {
       console.error("Erro ao excluir alimento:", error);
-      alert("Não foi possível excluir o alimento.");
+      notify("Não foi possível excluir o alimento.");
       return;
     }
 
@@ -762,10 +755,10 @@ async function excluirAlimento(alimentoId, refeicaoId) {
       })
     );
 
-    alert("Alimento excluído com sucesso!");
+    notify("Alimento excluído com sucesso!");
   } catch (erro) {
     console.error("Erro inesperado ao excluir alimento:", erro);
-    alert("Ocorreu um erro ao excluir o alimento.");
+    notify("Ocorreu um erro ao excluir o alimento.");
   }
 }
   return (

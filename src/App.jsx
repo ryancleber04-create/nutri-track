@@ -2,6 +2,13 @@ import "./NutriTrackAnimations.css";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import PlanoAlimentar from "./components/PlanoAlimentar";
 import { supabase } from "./supabase";
+import { notify } from "./ui/toast";
+import { fmtDate, fmtDateShort, calcAge, calcBMI, bmiCategory, latestEntry, currentWeight, progressPercent, calcularIdade, calcularJacksonPollock3 } from "./utils/helpers";
+import { loadClients, saveClient, deleteClientStorage } from "./services/clientes";
+import {
+  PoliticaModal, AceiteLgpd, PrivacidadePaciente,
+  VERSAO_POLITICA, registrarConsentimento,
+} from "./lgpd/Lgpd";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import {
@@ -14,244 +21,7 @@ import {
   ResponsiveContainer, ReferenceLine, Legend
 } from "recharts";
 
-/* ---------------------------------------------------------
-   Helpers
---------------------------------------------------------- */
-const genId = () => crypto.randomUUID();
 
-const fmtDate = (iso) => {
-  if (!iso) return "—";
-  const [y, m, d] = iso.split("-");
-  return `${d}/${m}/${y}`;
-};
-
-const fmtDateShort = (iso) => {
-  if (!iso) return "";
-  const [, m, d] = iso.split("-");
-  return `${d}/${m}`;
-};
-
-const calcAge = (birthDate) => {
-  if (!birthDate) return null;
-  const b = new Date(birthDate + "T00:00:00");
-  const now = new Date();
-  let age = now.getFullYear() - b.getFullYear();
-  const monthDiff = now.getMonth() - b.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < b.getDate())) age--;
-  return age;
-};
-
-const calcBMI = (weightKg, heightCm) => {
-  if (!weightKg || !heightCm) return null;
-  const h = heightCm / 100;
-  return weightKg / (h * h);
-};
-
-const bmiCategory = (bmi) => {
-  if (bmi == null) return { label: "—", color: "var(--sage-dark)" };
-  if (bmi < 18.5) return { label: "Abaixo do peso", color: "var(--gold)" };
-  if (bmi < 25) return { label: "Peso normal", color: "var(--forest)" };
-  if (bmi < 30) return { label: "Sobrepeso", color: "var(--gold)" };
-  if (bmi < 35) return { label: "Obesidade grau I", color: "var(--berry)" };
-  if (bmi < 40) return { label: "Obesidade grau II", color: "var(--berry)" };
-  return { label: "Obesidade grau III", color: "var(--berry)" };
-};
-
-const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
-
-const sortedEntries = (client) =>
-  [...(client.entries || [])].sort((a, b) => a.date.localeCompare(b.date));
-
-const latestEntry = (client) => {
-  const e = sortedEntries(client);
-  return e.length ? e[e.length - 1] : null;
-};
-
-const currentWeight = (client) => {
-  const le = latestEntry(client);
-  return le ? le.weight : client.initialWeight;
-};
-
-const progressPercent = (client) => {
-  const goal = parseFloat(client.goalWeight);
-  const start = parseFloat(client.initialWeight);
-  const cur = parseFloat(currentWeight(client));
-  if (!goal || !start || goal === start) return null;
-  const total = goal - start;
-  const done = cur - start;
-  return clamp((done / total) * 100, 0, 100);
-};
-
-/* ---------------------------------------------------------
-   Storage layer
---------------------------------------------------------- */
-// Armazenamento local do navegador.
-// O código original usava window.storage, que existe em alguns ambientes
-// específicos, mas não existe em um projeto React/Vite comum.
-// Aqui usamos localStorage para que o projeto funcione normalmente no navegador.
-const STORAGE_KEY = "nutri-track-clients";
-
-async function loadClients() {
-  try {
-    // Primeiro verifica a sessão atual
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-
-    if (sessionError) {
-      console.error("Erro ao verificar sessão:", sessionError);
-      throw sessionError;
-    }
-
-    const user = session?.user;
-
-    console.log("Usuário carregando pacientes:", user?.id);
-
-    if (!user) {
-      console.log("Usuário ainda não autenticado.");
-      return [];
-    }
-
-    // Busca somente os pacientes do nutricionista logado
-    const { data, error } = await supabase
-      .from("pacientes")
-      .select("*")
-      .eq("nutricionista_id", user.id)
-      .order("nome", { ascending: true });
-
-    if (error) {
-      console.error("Erro ao carregar pacientes:", error);
-      throw error;
-    }
-
-    console.log("Pacientes encontrados:", data);
-
-    return (data || []).map((paciente) => ({
-      id: paciente.id,
-      name: paciente.nome || "",
-      birthDate: paciente.data_nascimento || "",
-      sexo: paciente.sexo || "",
-      phone: paciente.telefone || "",
-      email: paciente.email || "",
-      height: paciente.altura ?? "",
-      initialWeight: paciente.peso_inicial ?? "",
-      goalWeight: paciente.peso_meta ?? "",
-      goalNotes: paciente.observacoes || "",
-    }));
-  } catch (error) {
-    console.error("Erro dentro de loadClients:", error);
-    throw error;
-  }
-}
-
-async function saveClient(client) {
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (authError || !user) {
-    throw new Error("Usuário não autenticado.");
-  }
-
-  const paciente = {
-    nutricionista_id: user.id,
-    nome: client.name,
-    data_nascimento: client.birthDate || null,
-    sexo: client.sexo || null,
-    telefone: client.phone || null,
-    email: client.email || null,
-    altura: client.height ? Number(client.height) : null,
-    peso_inicial: client.initialWeight
-      ? Number(client.initialWeight)
-      : null,
-    peso_meta: client.goalWeight
-      ? Number(client.goalWeight)
-      : null,
-    observacoes: client.goalNotes || null,
-  };
-
-  const uuidValido =
-    typeof client.id === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      client.id
-    );
-
-  console.log("Usuário autenticado:", user.id);
-  console.log("Paciente que será enviado:", paciente);  
-  console.log("client.id:", client.id);
-  console.log("uuidValido:", uuidValido);   
-
-  let result;
-
-  if (uuidValido) {
-    result = await supabase
-      .from("pacientes")
-      .update(paciente)
-      .eq("id", client.id)
-      .eq("nutricionista_id", user.id)
-      .select();
-  } else {
-    result = await supabase
-      .from("pacientes")
-      .insert([paciente])
-      .select();
-
-
-  }
-  console.log("RESULTADO SUPABASE:", result);
-
-if (result.error) {
-  console.error("ERRO SUPABASE:", result.error);
-  throw result.error;
-}
-
-console.log("PACIENTE SALVO NO BANCO:", result.data);
-
-return result.data;
-}
-
-  
-
-  
-
-
-async function deleteClientStorage(id) {
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (authError || !user) {
-    throw new Error("Usuário não autenticado.");
-  }
-
-  console.log("ID usuário logado:", user.id);
-  console.log("ID paciente:", id);
-
-  const { data, error } = await supabase
-    .from("pacientes")
-    .delete()
-    .eq("id", id)
-    .eq("nutricionista_id", user.id)
-    .select();
-
-  console.log("Resultado da exclusão:", data);
-
-  if (error) {
-    console.error("Erro ao excluir paciente:", error);
-    throw error;
-  }
-
-  if (!data || data.length === 0) {
-    throw new Error(
-      "Nenhum paciente foi excluído. Verifique o ID e as permissões."
-    );
-  }
-
-  return data;
-}
 
 /* ---------------------------------------------------------
    Ring avatar — signature element (growth-ring motif)
@@ -446,6 +216,9 @@ function ClientForm({ initial, onCancel, onSave }) {
       <Field label="Objetivo / observações">
         <textarea rows={3} className={inputClass} style={inputStyle} value={form.goalNotes} onChange={set("goalNotes")} placeholder="Ex: reeducação alimentar, ganho de massa magra, restrições..." />
       </Field>
+      <p className="text-xs rounded-lg px-3 py-2" style={{ background: "var(--sage-tint)", color: "var(--sage-dark)" }}>
+        Dados de saúde são dados pessoais sensíveis (LGPD, art. 11). Cadastre só o necessário ao acompanhamento e informe o paciente sobre o uso dos dados. Para menores de 18 anos, é preciso o consentimento de um dos pais ou do responsável legal.
+      </p>
       <div className="flex justify-end gap-2 mt-2">
         <button type="button" onClick={onCancel} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: "var(--ink)", border: "1px solid var(--sage)" }}>
           Cancelar
@@ -575,12 +348,12 @@ function ClientDetail({ client, onUpdate, onDeleteClient, onEditClient }) {
 
 const enviarConvitePaciente = async () => {
   if (!client.email) {
-    alert("Cadastre um e-mail para o paciente.");
+    notify("Cadastre um e-mail para o paciente.");
     return;
   }
 
   if (client.auth_user_id) {
-    alert("Este paciente já possui acesso.");
+    notify("Este paciente já possui acesso.");
     return;
   }
 
@@ -619,10 +392,10 @@ const enviarConvitePaciente = async () => {
       throw new Error(data?.erro || "Erro ao enviar convite.");
     }
 
-    alert("Convite enviado com sucesso!");
+    notify("Convite enviado com sucesso!");
   } catch (erro) {
     console.error("Erro ao enviar convite:", erro);
-    alert(erro.message || "Não foi possível enviar o convite.");
+    notify(erro.message || "Não foi possível enviar o convite.");
   } finally {
     setEnviandoConvite(false);
   }
@@ -687,10 +460,6 @@ const carregarMedicoes = async () => {
       .eq("nutricionista_id", user.id)
       .order("data_medicao", { ascending: false });
 
-    console.log("Paciente selecionado:", client.id);
-    console.log("Nutricionista:", user.id);
-    console.log("Medições retornadas:", data);
-    console.log("Erro na consulta:", error);
 
     if (error) throw error;
 
@@ -785,10 +554,6 @@ const excluirAvaliacao = async (id) => {
       .eq("paciente_id", client.id)
       .select();
 
-    console.log("ID avaliação:", id);
-    console.log("ID paciente:", client.id);
-    console.log("Dados retornados pelo DELETE:", data);
-    console.log("Erro retornado pelo DELETE:", error);
 
     if (error) {
       console.error("Erro ao excluir avaliação:", error);
@@ -805,10 +570,9 @@ const excluirAvaliacao = async (id) => {
       anteriores.filter((item) => item.id !== id)
     );
 
-    console.log("Avaliação excluída com sucesso.");
   } catch (error) {
     console.error("Erro ao excluir avaliação:", error);
-    alert("Não foi possível excluir a avaliação.");
+    notify("Não foi possível excluir a avaliação.");
   }
 };
 
@@ -843,8 +607,6 @@ useEffect(() => {
 const salvarAvaliacao = async () => {
   try {
     
-    console.log("PROTOCOLO SELECIONADO:", avaliacao.protocolo);
-    console.log("AVALIAÇÃO COMPLETA:", avaliacao);
 
     // Valores usados nos cálculos
 const peso = Number(avaliacao.peso);
@@ -923,18 +685,10 @@ if (avaliacao.protocolo === "jackson_pollock_3") {
     );
   } catch (erro) {
     console.error("Erro no protocolo:", erro);
-    alert(erro.message);
+    notify(erro.message);
     return;
   }
 }
-console.log("===== TESTE JACKSON & POLLOCK =====");
-console.log("Protocolo:", avaliacao.protocolo);
-console.log("Sexo do paciente:", client.sexo);
-console.log("Data nascimento:", client.birthDate);
-console.log("Soma das pregas:", somaPregasProtocolo);
-console.log("Densidade corporal:", densidadeCorporal);
-console.log("Percentual de gordura:", percentualGordura);
-console.log("==================================");
     const dadosAvaliacao = {
       paciente_id: client.id,
 
@@ -1000,7 +754,6 @@ console.log("==================================");
       densidade_corporal: densidadeCorporal,
     };
 
-    console.log("DADOS QUE SERÃO SALVOS:", dadosAvaliacao);
 
    let error;
 
@@ -1024,7 +777,7 @@ if (editingAvaliacao?.id) {
 
 if (error) {
   console.error("Erro ao salvar avaliação:", error);
-  alert(
+  notify(
     editingAvaliacao
       ? "Não foi possível atualizar a avaliação."
       : "Não foi possível salvar a avaliação."
@@ -1034,7 +787,7 @@ if (error) {
 
 await carregarAvaliacoes();
 
-alert(
+notify(
   editingAvaliacao
     ? "Avaliação atualizada com sucesso!"
     : "Avaliação salva com sucesso!"
@@ -1073,7 +826,7 @@ setEditingAvaliacao(null);
     setShowAvaliacaoForm(false);
   } catch (error) {
     console.error(error);
-    alert("Ocorreu um erro ao salvar a avaliação.");
+    notify("Ocorreu um erro ao salvar a avaliação.");
   }
 };
 
@@ -1143,7 +896,6 @@ const gerarPDF = async () => {
 
    
 
-console.log("AVALIAÇÃO MAIS RECENTE PARA O PDF:", avaliacaoMaisRecente);
 
     const pdf = new jsPDF("p", "mm", "a4");
 
@@ -1661,7 +1413,6 @@ if (avaliacoes.length === 0) {
   pdf.text("Nenhuma avaliação registrada.", 15, y);
   y += 10;
 } else {
-  console.log("AVALIAÇÕES PARA O PDF:", avaliacoes);
   avaliacoes.forEach((avaliacao, index) => {
   // Se não couber na página, cria outra
   if (y > 235) {
@@ -2139,151 +1890,8 @@ if (!planoPDF) {
     y += 10;
   }
 }
-// =====================================
-// GRÁFICO DE EVOLUÇÃO DO PESO
-// =====================================
-
-// Usa as medições já carregadas no painel do paciente
-const dadosGrafico = [...medicoesPaciente]
-  .filter((item) => item.peso != null && item.data_medicao)
-  .sort(
-    (a, b) =>
-      new Date(a.data_medicao) - new Date(b.data_medicao)
-  );
-
-if (dadosGrafico.length > 0) {
-  // Nova página exclusiva para o gráfico
-  pdf.addPage();
-
-  pdf.setFillColor(47, 75, 60);
-  pdf.rect(0, 0, 210, 35, "F");
-
-  pdf.setTextColor(255, 255, 255);
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(18);
-  pdf.text("Evolucao do peso", 15, 22);
-
-  const pesosGrafico = dadosGrafico.map((item) =>
-    Number(item.peso)
-  );
-
-  const menorPeso = Math.min(...pesosGrafico);
-  const maiorPeso = Math.max(...pesosGrafico);
-
-  const minimo = Math.min(menorPeso, meta ?? menorPeso) - 2;
-  const maximo = Math.max(maiorPeso, meta ?? maiorPeso) + 2;
-  const intervalo = maximo - minimo || 1;
-
-  const xInicio = 30;
-  const xFim = 190;
-  const yTopo = 65;
-  const yBase = 180;
-
-  const obterY = (peso) =>
-    yBase - ((peso - minimo) / intervalo) * (yBase - yTopo);
-
-  const obterX = (indice) =>
-    dadosGrafico.length === 1
-      ? (xInicio + xFim) / 2
-      : xInicio +
-        (indice / (dadosGrafico.length - 1)) *
-          (xFim - xInicio);
-
-  // Linhas horizontais e valores de referência
-  pdf.setFontSize(9);
-
-  for (let i = 0; i <= 5; i++) {
-    const peso = minimo + (intervalo / 5) * i;
-    const yLinha = obterY(peso);
-
-    pdf.setDrawColor(230, 235, 226);
-    pdf.line(xInicio, yLinha, xFim, yLinha);
-
-    pdf.setTextColor(108, 125, 100);
-    pdf.text(peso.toFixed(1), 25, yLinha + 1, {
-      align: "right",
-    });
-  }
-
-  // Linha da meta
-  if (meta != null && Number.isFinite(Number(meta))) {
-    const yMeta = obterY(Number(meta));
-
-    pdf.setDrawColor(184, 137, 47);
-    pdf.setLineDashPattern([3, 2], 0);
-    pdf.line(xInicio, yMeta, xFim, yMeta);
-    pdf.setLineDashPattern([], 0);
-
-    pdf.setTextColor(184, 137, 47);
-    pdf.text("Meta", xFim, yMeta - 3, {
-      align: "right",
-    });
-  }
-
-  // Linha do peso
-  pdf.setDrawColor(47, 75, 60);
-  pdf.setLineWidth(0.8);
-
-  dadosGrafico.forEach((item, indice) => {
-    const x = obterX(indice);
-    const y = obterY(Number(item.peso));
-
-    if (indice > 0) {
-      const anterior = dadosGrafico[indice - 1];
-
-      pdf.line(
-        obterX(indice - 1),
-        obterY(Number(anterior.peso)),
-        x,
-        y
-      );
-    }
-
-    pdf.setFillColor(47, 75, 60);
-    pdf.circle(x, y, 1.8, "F");
-
-    pdf.setTextColor(47, 75, 60);
-    pdf.setFontSize(8);
-    pdf.text(
-      `${Number(item.peso).toFixed(1)} kg`,
-      x,
-      y - 5,
-      { align: "center" }
-    );
-
-    const data = new Date(
-      `${item.data_medicao}T12:00:00`
-    ).toLocaleDateString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-    });
-
-    pdf.setTextColor(108, 125, 100);
-    pdf.text(data, x, yBase + 8, {
-      align: "center",
-    });
-  });
-
-  // Resumo da evolução
-  const pesoInicial = pesosGrafico[0];
-  const pesoAtual = pesosGrafico[pesosGrafico.length - 1];
-  const variacao = pesoAtual - pesoInicial;
-
-  pdf.setFillColor(245, 247, 242);
-  pdf.roundedRect(15, 210, 180, 35, 3, 3, "F");
-
-  pdf.setTextColor(47, 75, 60);
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(11);
-
-  pdf.text(`Peso inicial: ${pesoInicial.toFixed(1)} kg`, 22, 222);
-  pdf.text(`Peso atual: ${pesoAtual.toFixed(1)} kg`, 22, 231);
-  pdf.text(
-    `Variacao: ${variacao > 0 ? "+" : ""}${variacao.toFixed(1)} kg`,
-    110,
-    222
-  );
 }
+
 // =========================
 // RODAPÉ
 // =========================
@@ -2312,6 +1920,12 @@ for (let pagina = 1; pagina <= totalPaginas; pagina++) {
   );
 
   pdf.text(
+    "Documento confidencial: contém dados pessoais sensíveis de saúde (LGPD, art. 5º, II). Divulgação proibida.",
+    15,
+    293
+  );
+
+  pdf.text(
     `Página ${pagina} de ${totalPaginas}`,
     larguraPagina - 15,
     288,
@@ -2328,13 +1942,12 @@ const nomeArquivo = (client?.name || "paciente")
   .toLowerCase();
 
 pdf.save(`relatorio-${nomeArquivo}.pdf`);
-}
 
   
 
   } catch (error) {
     console.error("Erro ao gerar PDF:", error);
-    alert("Não foi possível gerar o relatório.");
+    notify("Não foi possível gerar o relatório.");
   }
 };
 
@@ -2375,9 +1988,6 @@ pdf.save(`relatorio-${nomeArquivo}.pdf`);
       observacoes: data.notes || null,
     };
 
-    console.log("Usuário logado:", user.id);
-    console.log("Paciente usado na medição:", client.id);
-    console.log("Medição enviada:", medicao);
 
     let result;
 
@@ -2404,10 +2014,6 @@ pdf.save(`relatorio-${nomeArquivo}.pdf`);
       throw result.error;
     }
 
-    console.log(
-      "Medição salva:",
-      result.data
-    );
 
     await carregarMedicoes();
 
@@ -2420,7 +2026,7 @@ pdf.save(`relatorio-${nomeArquivo}.pdf`);
       error
     );
 
-    alert("Não foi possível salvar a medição.");
+    notify("Não foi possível salvar a medição.");
   }
 };
 
@@ -2454,10 +2060,9 @@ pdf.save(`relatorio-${nomeArquivo}.pdf`);
 
     setConfirmDeleteEntry(null);
 
-    console.log("Medição excluída com sucesso.");
   } catch (error) {
     console.error("Erro ao excluir medição:", error);
-    alert("Não foi possível excluir a medição.");
+    notify("Não foi possível excluir a medição.");
   }
 };
 const editarAvaliacao = (item) => {
@@ -3604,76 +3209,6 @@ function EmptyState({ onNewClient, hasClients }) {
     </div>
   );
 }
-function calcularIdade(dataNascimento) {
-  if (!dataNascimento) return null;
-
-  const hoje = new Date();
-  const nascimento = new Date(`${dataNascimento}T00:00:00`);
-
-  let idade = hoje.getFullYear() - nascimento.getFullYear();
-
-  const mes = hoje.getMonth() - nascimento.getMonth();
-
-  if (
-    mes < 0 ||
-    (mes === 0 && hoje.getDate() < nascimento.getDate())
-  ) {
-    idade--;
-  }
-
-  return idade;
-}
-function calcularJacksonPollock3({
-  sexo,
-  idade,
-  peitoral,
-  abdominal,
-  coxa,
-  tricipital,
-  supraIliaca,
-}) {
-  let soma;
-  let densidade;
-
-  const sexoNormalizado = sexo?.toLowerCase();
-
-  if (sexoNormalizado === "masculino") {
-    soma =
-      Number(peitoral) +
-      Number(abdominal) +
-      Number(coxa);
-
-    densidade =
-      1.10938 -
-      0.0008267 * soma +
-      0.0000016 * Math.pow(soma, 2) -
-      0.0002574 * idade;
-  } else if (sexoNormalizado === "feminino") {
-    soma =
-      Number(tricipital) +
-      Number(supraIliaca) +
-      Number(coxa);
-
-    densidade =
-      1.0994921 -
-      0.0009929 * soma +
-      0.0000023 * Math.pow(soma, 2) -
-      0.0001392 * idade;
-  } else {
-    throw new Error(
-      "O paciente precisa ter o sexo cadastrado para usar este protocolo."
-    );
-  }
-
-  const percentualGordura =
-    (495 / densidade) - 450;
-
-  return {
-    somaPregas: soma,
-    densidade,
-    percentualGordura,
-  };
-}
 /* ---------------------------------------------------------
    Main app
 --------------------------------------------------------- */
@@ -3698,6 +3233,13 @@ export default function NutriTrackApp() {
   const [avaliacaoAberta, setAvaliacaoAberta] = useState(null);
   const [carregandoResumo, setCarregandoResumo] = useState(false);
   const [erroResumo, setErroResumo] = useState("");
+  const [mostrarPolitica, setMostrarPolitica] = useState(false);
+  const [aceitePacienteLgpd, setAceitePacienteLgpd] = useState(false);
+  const [aceiteTermos, setAceiteTermos] = useState(false);
+  const [declaroControlador, setDeclaroControlador] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginSenha, setLoginSenha] = useState("");
+  const [nomeNutricionistaLogado, setNomeNutricionistaLogado] = useState("");
 
 const [nutricionista, setNutricionista] = useState({
   nome: "",
@@ -3713,7 +3255,7 @@ const gerarPDFAvaliacao = (avaliacao) => {
 
   const pdf = new jsPDF("p", "mm", "a4");
   const nomeNutricionista =
-    nutricionista?.nome?.trim() || "Não informado";
+    nomeNutricionistaLogado?.trim() || "Não informado";
   const W = 210;
   const H = 297;
   const M = 16;
@@ -4138,6 +3680,11 @@ if (pesoMeta != null && Number(pesoMeta) > 0) {
       H - 11
     );
     pdf.text(
+      "Documento confidencial: contém dados pessoais sensíveis de saúde (LGPD, art. 5º, II). Divulgação proibida.",
+      M,
+      H - 7
+    );
+    pdf.text(
       `Página ${pagina} de ${totalPaginas}`,
       W - M,
       H - 11,
@@ -4182,6 +3729,7 @@ if (pesoMeta != null && Number(pesoMeta) > 0) {
   if (erroNutri) throw erroNutri;
 
   if (nutri) {
+    setNomeNutricionistaLogado(nutri.nome || "");
     setTipoUsuario("nutricionista");
     setUsuarioAtual(user);
     setDadosPaciente(null);
@@ -4204,6 +3752,23 @@ if (pesoMeta != null && Number(pesoMeta) > 0) {
     return true;
   }
 
+  // Nutricionista que confirmou o e-mail e ainda não tem perfil: conclui o cadastro agora
+  if (user.user_metadata?.tipo_cadastro === "nutricionista") {
+    const nomePerfil = (user.user_metadata?.nome || "").trim();
+    const { error: erroCriacao } = await supabase
+      .from("nutricionistas")
+      .insert({ id: user.id, nome: nomePerfil });
+
+    if (erroCriacao) throw erroCriacao;
+
+    await registrarConsentimento("nutricionista_termos");
+    setNomeNutricionistaLogado(nomePerfil);
+    setTipoUsuario("nutricionista");
+    setUsuarioAtual(user);
+    setDadosPaciente(null);
+    return true;
+  }
+
   setTipoUsuario(null);
   setUsuarioAtual(null);
   setDadosPaciente(null);
@@ -4211,12 +3776,17 @@ if (pesoMeta != null && Number(pesoMeta) > 0) {
 };
   const salvarSenhaPaciente = async () => {
   if (novaSenha.length < 8) {
-    alert("A senha precisa ter pelo menos 8 caracteres.");
+    notify("A senha precisa ter pelo menos 8 caracteres.");
     return;
   }
 
   if (novaSenha !== confirmarNovaSenha) {
-    alert("As senhas não são iguais.");
+    notify("As senhas não são iguais.");
+    return;
+  }
+
+  if (!aceitePacienteLgpd) {
+    notify("Para continuar, é necessário ler e aceitar a Política de Privacidade.");
     return;
   }
 
@@ -4242,6 +3812,10 @@ if (pesoMeta != null && Number(pesoMeta) > 0) {
     // Salva a nova senha do paciente
 const { error } = await supabase.auth.updateUser({
   password: novaSenha,
+  data: {
+    consentimento_versao: VERSAO_POLITICA,
+    consentimento_em: new Date().toISOString(),
+  },
 });
 
 if (error) throw error;
@@ -4258,6 +3832,9 @@ if (erroConclusao) {
   );
 }
 
+    await registrarConsentimento("paciente_dados_saude");
+    setAceitePacienteLgpd(false);
+
     setPrimeiroAcesso(false);
     setNovaSenha("");
     setConfirmarNovaSenha("");
@@ -4265,19 +3842,19 @@ if (erroConclusao) {
     await identificarUsuario(sessao.user);
     setLoggedIn(true);
 
-    alert("Senha cadastrada com sucesso!");
+    notify("Senha cadastrada com sucesso!");
   } catch (erro) {
-    alert(erro.message || "Não foi possível cadastrar a senha.");
+    notify(erro.message || "Não foi possível cadastrar a senha.");
   } finally {
     setSalvandoSenha(false);
   }
 };
   const handleLogin = async () => {
-  const email = document.querySelector('input[type="email"]')?.value;
-  const senha = document.querySelector('input[type="password"]')?.value;
+  const email = loginEmail.trim();
+  const senha = loginSenha;
 
   if (!email || !senha) {
-    alert("Preencha o e-mail e a senha.");
+    notify("Preencha o e-mail e a senha.");
     return;
   }
 
@@ -4287,10 +3864,11 @@ if (erroConclusao) {
   });
 
   if (error) {
-    alert("E-mail ou senha incorretos.");
+    notify("E-mail ou senha incorretos.");
     return;
   }
 
+  setLoginSenha("");
   setVerificandoPerfil(true);
 
   try {
@@ -4299,7 +3877,7 @@ if (erroConclusao) {
     
 if (!encontrado) {
   await supabase.auth.signOut();
-  alert("Usuário sem cadastro de nutricionista ou paciente.");
+  notify("Usuário sem cadastro de nutricionista ou paciente.");
   return;
 }
 
@@ -4330,7 +3908,7 @@ setLoggedIn(true);
     await supabase.auth.signOut();
     setTipoUsuario(null);
     setUsuarioAtual(null);
-    alert("Não foi possível verificar o perfil do usuário.");
+    notify("Não foi possível verificar o perfil do usuário.");
   } finally {
     setVerificandoPerfil(false);
   }
@@ -4340,7 +3918,7 @@ const handleLogout = async () => {
   const { error } = await supabase.auth.signOut();
 
   if (error) {
-    alert("Não foi possível sair da conta.");
+    notify("Não foi possível sair da conta.");
     return;
   }
 
@@ -4349,10 +3927,43 @@ const handleLogout = async () => {
   setUsuarioAtual(null);
   setDadosPaciente(null);
   setMedicoesPaciente([]);
+  setPlanoPaciente(null);
+  setRefeicoesPaciente([]);
+  setAvaliacoesPaciente([]);
   setPrimeiroAcesso(false);
   setClients([]);
   setSelectedId(null);
+  setNomeNutricionistaLogado("");
+  setLoginEmail("");
+  setLoginSenha("");
+  setMostrarPolitica(false);
 };
+
+// Encerra a sessão após 30 min sem atividade (dados de saúde em tela compartilhada/esquecida)
+useEffect(() => {
+  if (!loggedIn) return;
+
+  const LIMITE_MS = 30 * 60 * 1000;
+  const eventos = ["mousemove", "keydown", "click", "scroll", "touchstart"];
+  let timer;
+
+  const reiniciar = () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      notify("Sessão encerrada por inatividade, para proteger seus dados de saúde.", "info");
+      await handleLogout();
+    }, LIMITE_MS);
+  };
+
+  eventos.forEach((e) => window.addEventListener(e, reiniciar, { passive: true }));
+  reiniciar();
+
+  return () => {
+    clearTimeout(timer);
+    eventos.forEach((e) => window.removeEventListener(e, reiniciar));
+  };
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [loggedIn]);
 
 
   useEffect(() => {
@@ -4540,9 +4151,6 @@ useEffect(() => {
           .order("data_avaliacao", { ascending: false }),
       ]);
 
-      console.log("ID do paciente:", dadosPaciente.id);
-      console.log("Plano retornado:", resPlano.data);
-      console.log("Erro do plano:", resPlano.error);
 
       if (resPlano.error) throw resPlano.error;
       if (resAvaliacoes.error) throw resAvaliacoes.error;
@@ -4651,7 +4259,6 @@ useEffect(() => {
 
       const savedData = await saveClient(newClient);
 
-      console.log("Paciente retornado pelo Supabase:", savedData);
 
       if (!savedData || savedData.length === 0) {
         throw new Error("Supabase não retornou o paciente criado.");
@@ -4708,6 +4315,10 @@ const ultimaMedicao =
     : null;
 
 const pesoAtual = ultimaMedicao?.peso;
+
+const politicaModal = mostrarPolitica ? (
+  <PoliticaModal onClose={() => setMostrarPolitica(false)} />
+) : null;
   
 if (verificandoPerfil && !primeiroAcesso) {
   return (
@@ -4752,10 +4363,18 @@ if (primeiroAcesso) {
             className="w-full rounded-xl border border-gray-300 p-3"
           />
 
+          <AceiteLgpd
+            checked={aceitePacienteLgpd}
+            onChange={setAceitePacienteLgpd}
+            onAbrirPolitica={() => setMostrarPolitica(true)}
+          >
+            Li a Política de Privacidade e autorizo o tratamento dos meus dados pessoais, inclusive dados de saúde, para o meu acompanhamento nutricional.
+          </AceiteLgpd>
+
           <button
             type="button"
             onClick={salvarSenhaPaciente}
-            disabled={salvandoSenha}
+            disabled={salvandoSenha || !aceitePacienteLgpd}
             className="w-full rounded-xl p-3 font-semibold text-white disabled:opacity-50"
             style={{ backgroundColor: "#2F4B3C" }}
           >
@@ -4763,6 +4382,7 @@ if (primeiroAcesso) {
           </button>
         </div>
       </div>
+      {politicaModal}
     </div>
   );
 }
@@ -4785,12 +4405,20 @@ if (primeiroAcesso) {
           <input
             type="email"
             placeholder="E-mail"
+            autoComplete="email"
+            value={loginEmail}
+            onChange={(e) => setLoginEmail(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleLogin()}
             className="w-full rounded-xl border border-gray-300 p-3 outline-none"
           />
 
           <input
             type="password"
             placeholder="Senha"
+            autoComplete="current-password"
+            value={loginSenha}
+            onChange={(e) => setLoginSenha(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleLogin()}
             className="w-full rounded-xl border border-gray-300 p-3 outline-none"
           />
 
@@ -4885,6 +4513,22 @@ if (primeiroAcesso) {
                 }
               />
 
+              <AceiteLgpd
+                checked={aceiteTermos}
+                onChange={setAceiteTermos}
+                onAbrirPolitica={() => setMostrarPolitica(true)}
+              >
+                Li e aceito os Termos de Uso e a Política de Privacidade.
+              </AceiteLgpd>
+
+              <AceiteLgpd
+                checked={declaroControlador}
+                onChange={setDeclaroControlador}
+                onAbrirPolitica={() => setMostrarPolitica(true)}
+              >
+                Declaro que tenho base legal para tratar os dados de saúde dos meus pacientes e que os informarei sobre o uso desta plataforma.
+              </AceiteLgpd>
+
               <button
   type="button"
   onClick={async () => {
@@ -4894,27 +4538,56 @@ if (primeiroAcesso) {
     !nutricionista.senha ||
     !nutricionista.confirmarSenha
   ) {
-    alert("Preencha todos os campos.");
+    notify("Preencha todos os campos.");
     return;
   }
 
   if (nutricionista.senha !== nutricionista.confirmarSenha) {
-    alert("As senhas não são iguais.");
+    notify("As senhas não são iguais.");
+    return;
+  }
+
+  if (nutricionista.senha.length < 8) {
+    notify("A senha precisa ter pelo menos 8 caracteres.");
+    return;
+  }
+
+  if (!aceiteTermos || !declaroControlador) {
+    notify("Para criar a conta, aceite os Termos de Uso e confirme a declaração sobre os dados dos pacientes.");
     return;
   }
 
   const { data, error } = await supabase.auth.signUp({
-    email: nutricionista.email,
+    email: nutricionista.email.trim(),
     password: nutricionista.senha,
+    options: {
+      data: {
+        tipo_cadastro: "nutricionista",
+        nome: nutricionista.nome.trim(),
+        aceite_termos_versao: VERSAO_POLITICA,
+        aceite_termos_em: new Date().toISOString(),
+      },
+    },
   });
 
   if (error) {
-    alert("Erro ao criar conta: " + error.message);
+    notify("Erro ao criar conta: " + error.message);
     return;
   }
 
   if (!data.user) {
-    alert("Não foi possível criar o usuário.");
+    notify("Não foi possível criar o usuário.");
+    return;
+  }
+
+  // Com confirmação de e-mail ativa não há sessão ainda: o cadastro do perfil
+  // é concluído no primeiro login (veja identificarUsuario).
+  if (!data.session) {
+    notify("Conta criada! Enviamos um e-mail de confirmação. Confirme-o para entrar.", "ok");
+    setAceiteTermos(false);
+    setDeclaroControlador(false);
+    setShowCadastro(false);
+    setNutricionista({ nome: "", email: "", senha: "", confirmarSenha: "" });
     return;
   }
 
@@ -4922,17 +4595,21 @@ if (primeiroAcesso) {
     .from("nutricionistas")
     .insert({
       id: data.user.id,
-      nome: nutricionista.nome,
+      nome: nutricionista.nome.trim(),
     });
 
   if (erroCadastro) {
-    alert("A conta foi criada, mas não foi possível salvar o cadastro.");
+    notify("A conta foi criada, mas não foi possível salvar o cadastro.");
     console.error(erroCadastro);
     return;
   }
 
-  alert("Conta criada com sucesso!");
+  await registrarConsentimento("nutricionista_termos");
 
+  notify("Conta criada com sucesso!");
+
+  setAceiteTermos(false);
+  setDeclaroControlador(false);
   setShowCadastro(false);
 
   setNutricionista({
@@ -4966,7 +4643,13 @@ if (primeiroAcesso) {
           </div>
         )}
 
+        <p className="mt-6 text-center text-xs text-gray-500">
+          <button type="button" onClick={() => setMostrarPolitica(true)} className="underline">
+            Política de Privacidade e Termos de Uso
+          </button>
+        </p>
       </div>
+      {politicaModal}
     </div>
   );
 }
@@ -5253,10 +4936,19 @@ if (tipoUsuario === "paciente") {
   </div>
 )}
 
+<PrivacidadePaciente
+  medicoes={medicoesPaciente}
+  plano={planoPaciente}
+  refeicoes={refeicoesPaciente}
+  avaliacoes={avaliacoesPaciente}
+  onAbrirPolitica={() => setMostrarPolitica(true)}
+/>
+
 <p className="text-xs text-center text-[#6C7D64] pb-5">
   NutriTrack • Seu acompanhamento em cada etapa
 </p>
       </main>
+      {politicaModal}
     </div>
   );
 }
@@ -5368,6 +5060,9 @@ if (tipoUsuario === "paciente") {
 
         <div className="px-5 py-3 text-xs" style={{ borderTop: "1px solid var(--sage)", color: "var(--sage-dark)" }}>
           {clients.length} {clients.length === 1 ? "cliente cadastrado" : "clientes cadastrados"}
+          <button type="button" onClick={() => setMostrarPolitica(true)} className="block mt-1 underline">
+            Privacidade e Termos de Uso
+          </button>
         </div>
       </div>
 
@@ -5395,6 +5090,8 @@ if (tipoUsuario === "paciente") {
           <button onClick={() => setSaveError(null)} className="ml-2"><X size={14} /></button>
         </div>
       )}
+
+      {politicaModal}
     </div>
   );
 }

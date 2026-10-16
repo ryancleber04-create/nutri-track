@@ -26,3 +26,6 @@ dist-ssr
 # Variaveis de ambiente
 .env
 .env.*
+
+# Exceção: modelo de variáveis, sem segredos
+!.env.example
