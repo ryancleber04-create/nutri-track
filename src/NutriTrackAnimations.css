@@ -7,7 +7,9 @@
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    /* "none" (e não translateY(0)) para não criar um bloco de contenção
+       que deslocaria modais com position: fixed dentro do conteúdo */
+    transform: none;
   }
 }
 
@@ -20,24 +22,24 @@
   }
 }
 
-/* Entrada suave das telas */
+/* Entrada suave das telas.
+   "backwards" (e não "both"): depois da animação o elemento volta ao estilo normal,
+   senão o transform final trava o efeito de hover e desloca modais fixos. */
 #root main {
-  animation: nutriFadeIn 0.6s ease-out both;
+  animation: nutriFadeIn 0.6s ease-out backwards;
 }
 
-/* Animação dos cartões */
-#root main .rounded-xl,
-#root main .rounded-2xl {
-  animation: nutriFadeIn 0.5s ease-out both;
+/* Cartões: só contêineres, nunca botões, campos, links, rótulos ou modais */
+#root main :is(.rounded-xl, .rounded-2xl):not(button, input, select, textarea, a, label, .fixed) {
+  animation: nutriFadeIn 0.5s ease-out backwards;
   transition:
     transform 0.25s ease,
     box-shadow 0.25s ease;
 }
 
-/* Efeito ao passar o mouse */
+/* Efeito ao passar o mouse (não em cartões que contêm formulários ou tabelas) */
 @media (hover: hover) {
-  #root main .rounded-xl:hover,
-  #root main .rounded-2xl:hover {
+  #root main :is(.rounded-xl, .rounded-2xl):not(button, input, select, textarea, a, label, .fixed, :has(input, select, textarea, table)):hover {
     transform: translateY(-3px);
     box-shadow: 0 10px 25px rgba(47, 75, 60, 0.12);
   }
@@ -52,18 +54,19 @@
   transition:
     transform 0.2s ease,
     background-color 0.2s ease,
-    box-shadow 0.2s ease;
+    box-shadow 0.2s ease,
+    filter 0.2s ease;
 }
 
 #root button:active:not(:disabled) {
   transform: scale(0.97);
 }
 
-/* Acessibilidade */
+/* Acessibilidade: respeita "reduzir movimento", mas mantém indicadores de carregamento */
 @media (prefers-reduced-motion: reduce) {
-  #root *,
-  #root *::before,
-  #root *::after {
+  #root *:not(.animate-spin),
+  #root *:not(.animate-spin)::before,
+  #root *:not(.animate-spin)::after {
     animation: none !important;
     transition: none !important;
   }
@@ -81,7 +84,7 @@ html, body, #root { max-width: 100%; min-width: 0; }
 #root .nt-nutritionist .recharts-responsive-container { min-width: 0; }
 
 @media (max-width: 767px) {
-  #root .nt-nutritionist { min-height: 100dvh !important; height: auto !important; overflow: visible !important; }
+  #root .nt-nutritionist { min-height: 100vh; min-height: 100dvh; height: auto !important; overflow: visible !important; }
   #root .nt-sidebar { max-height: 320px; border-right: 0 !important; border-bottom: 1px solid var(--sage); }
   #root .nt-sidebar > .flex-1 { min-height: 0; overflow-y: auto; }
   #root .nt-nutritionist > :not(.nt-sidebar) { width: 100%; overflow-x: auto; }
@@ -90,7 +93,7 @@ html, body, #root { max-width: 100%; min-width: 0; }
   #root .nt-animated main h2 { overflow-wrap: anywhere; }
   #root .nt-animated main .recharts-wrapper { max-width: 100%; }
   #root .fixed.inset-0 { padding: 0.75rem; }
-  #root .fixed.inset-0 > div { max-height: 92dvh; }
+  #root .fixed.inset-0 > div { max-height: 92vh; max-height: 92dvh; }
 }
 
 @media (max-width: 380px) {
@@ -98,7 +101,9 @@ html, body, #root { max-width: 100%; min-width: 0; }
   #root .nt-animated main .text-2xl { font-size: 1.25rem; }
   #root .nt-animated main .text-3xl { font-size: 1.5rem; }
 }
+
 .nutri-login-background {
+  min-height: 100vh; /* alternativa para navegadores sem suporte a dvh */
   min-height: 100dvh;
   background: linear-gradient(
     135deg,
